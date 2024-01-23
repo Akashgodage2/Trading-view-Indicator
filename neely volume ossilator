@@ -1,0 +1,9 @@
+//@version=4
+study("Neely River Volume Oscillator", shorttitle="NRVO", overlay = true)
+fastLength = input(12, title="Fast Length")
+slowLength = input(26, title="Slow Length")
+smaFast = sma(volume, fastLength)
+smaSlow = sma(volume, slowLength)
+nrvo = smaFast - smaSlow
+plot(nrvo, title="NRVO", color=color.blue)
+hline(0, "Zero Line", color=color.gray)
