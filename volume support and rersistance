@@ -1,0 +1,39 @@
+//@version=5
+indicator("Volume Support and Resistance", shorttitle="VSR", overlay=true)
+
+// Inputs
+lookbackPeriod = input(20, title="Lookback Period")
+multiplier = input(2, title="Multiplier")
+volumeThreshold = input(1.5, title="Volume Threshold")
+
+// Calculate significant volume bars
+significantVolumeBar(close, volume, lookback) =>
+    volumeChange = volume - ta.sma(volume, lookback)
+    closeChange = close - ta.sma(close, lookback)
+    volumeChange > volumeThreshold * ta.sma(volumeChange, lookback) and closeChange < ta.sma(closeChange, lookback)
+
+// Find support and resistance levels
+findSupportResistance(src, lookback, mult) =>
+    var float support = na
+    var float resistance = na
+    
+    for i = 1 to lookback
+        if low[i] <= support or na(support)
+            support := low[i]
+        if high[i] >= resistance or na(resistance)
+            resistance := high[i]
+
+    [support + mult * (support - resistance), resistance + mult * (resistance - support)]
+
+// Check for significant volume bars
+significantVolume = significantVolumeBar(close, volume, lookbackPeriod)
+
+// Find support and resistance levels based on significant volume bars
+[supportLevel, resistanceLevel] = findSupportResistance(close, lookbackPeriod, multiplier)
+
+// Plot support and resistance levels
+plot(supportLevel, color=color.green, title="Support Level", linewidth=2)
+plot(resistanceLevel, color=color.red, title="Resistance Level", linewidth=2)
+
+// Highlight significant volume bars
+bgcolor(significantVolume ? color.new(color.blue, 90) : na)
