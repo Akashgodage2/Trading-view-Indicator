@@ -1,0 +1,218 @@
+//@version=5
+
+
+
+indicator('Akash indicator', overlay=true)
+
+
+Chart = 'Same as chart'
+Dy01 = '1 Day'
+Dy03 = '3 Days'
+Wk01 = '1 Week'
+Wk02 = '2 Weeks'
+Mh01 = '1 Month'
+Mh03 = '3 Months'
+Mh06 = '6 Months'
+Yr01 = '1 Year'
+
+resolution_input = input.string(Chart, 'Timeframe', options=[Chart, Dy01, Dy03, Wk01, Wk02, Mh01, Mh03, Mh06, Yr01])
+ML_color_input = input(color.white, 'ML Color')
+VB_color_input = input(color.maroon, 'ML Color on VB')
+color_transp = input.int(20, 'Transparency', minval=0, maxval=100)
+displacement = input(0, 'Displacment')
+
+
+res = if resolution_input == Chart
+    ''
+else if resolution_input == Dy01
+    '1D'
+else if resolution_input == Dy03
+    '3D'
+else if resolution_input == Wk01
+    '1W'
+else if resolution_input == Wk02
+    '2W'
+else if resolution_input == Mh01
+    '1M'
+else if resolution_input == Mh03
+    '3M'
+else if resolution_input == Mh06
+    '6M'
+else if resolution_input == Yr01
+    '12M'
+
+[RO, RH, RL, RC, PC] = request.security(syminfo.tickerid, res, [open, high, low, close, close[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+
+var int index = -1
+var float AO = na
+var float AH = na
+var float AL = na
+var float AC = na
+var float cast = na
+var arrayC = array.new_float(3, na)
+var arrayI = array.new_float(3, na)
+var float castB0 = na
+var float castB1 = na
+var float castB2 = na
+var float indexB1 = na
+var float UT = na
+var float DT = na
+var float UI = na
+var float DI = na
+var float LT = na
+var bool VB = false
+
+
+if RO
+    index += 1
+
+    if index == 0
+        AO := RO
+        AH := RH
+        AL := RL
+        AC := RC
+
+    if index == 1
+        AO := RO
+        AH := RH
+        AL := RL
+        AC := RC
+
+    UP = RH > AH[1] and RL >= AL[1]
+    DN = RH <= AH[1] and RL < AL[1]
+    OB = RH > AH[1] and RL < AL[1]
+    IB = RH <= AH[1] and RL >= AL[1]
+    GU = UP and RO > PC and RL > PC
+    GD = DN and RO < PC and RH < PC
+
+    if UP
+        if GU
+            AO := RO
+            AH := RH
+            AL := PC
+            AC := RC
+            cast := AH
+        else
+            AO := RO
+            AH := RH
+            AL := RL
+            AC := RC
+            cast := AH
+    else if DN
+        if GD
+            AO := RO
+            AH := PC
+            AL := RL
+            AC := RC
+            cast := AL
+        else
+            AO := RO
+            AH := RH
+            AL := RL
+            AC := RC
+            cast := AL
+    else if OB
+        AO := RO
+        AH := RH
+        AL := RL
+        AC := RC
+        if castB0 == AH[1]
+            cast := AH
+        if castB0 == AL[1]
+            cast := AL
+    else if IB
+        cast := na
+
+    if cast
+        array.unshift(arrayC, cast)
+        array.unshift(arrayI, index)
+
+    castB0 := array.get(arrayC, 0)
+    castB1 := array.get(arrayC, 1)
+    castB2 := array.get(arrayC, 2)
+
+    indexB1 := array.get(arrayI, 1)
+
+    if castB0 > castB1 and castB1 < castB2
+        UT := castB1
+        UI := indexB1
+    if castB0 < castB1 and castB1 > castB2
+        DT := castB1
+        DI := indexB1
+
+    if UI > DI
+        LT := UT
+    else if DI > UI
+        LT := DT
+
+    if OB
+        if LT == UT and LT > RL
+            VB := true
+            if RC > RO
+                cast := AH
+                array.set(arrayC, 2, array.get(arrayC, 1))
+                array.set(arrayC, 1, AL)
+                array.set(arrayC, 0, AH)
+                array.set(arrayI, 2, array.get(arrayI, 1))
+                array.set(arrayI, 1, index)
+                array.set(arrayI, 0, index + 0.5)
+                castB0 := AH
+                UT := AL
+                UI := index
+                LT := AL
+            if RC < RO
+                cast := AL
+                array.set(arrayC, 2, array.get(arrayC, 1))
+                array.set(arrayC, 1, AH)
+                array.set(arrayC, 0, AL)
+                array.set(arrayI, 2, array.get(arrayI, 1))
+                array.set(arrayI, 1, index)
+                array.set(arrayI, 0, index + 0.5)
+                castB0 := AL
+                DT := AH
+                DI := index
+                LT := AH
+        else if LT == DT and LT < RH
+            VB := true
+            if RC > RO
+                cast := AH
+                array.set(arrayC, 2, array.get(arrayC, 1))
+                array.set(arrayC, 1, AL)
+                array.set(arrayC, 0, AH)
+                array.set(arrayI, 2, array.get(arrayI, 1))
+                array.set(arrayI, 1, index)
+                array.set(arrayI, 0, index + 0.5)
+                castB0 := AH
+                UT := AL
+                UI := index
+                LT := AL
+            if RC < RO
+                cast := AL
+                array.set(arrayC, 2, array.get(arrayC, 1))
+                array.set(arrayC, 1, AH)
+                array.set(arrayC, 0, AL)
+                array.set(arrayI, 2, array.get(arrayI, 1))
+                array.set(arrayI, 1, index)
+                array.set(arrayI, 0, index + 0.5)
+                castB0 := AL
+                DT := AH
+                DI := index
+                LT := AH
+        else
+            VB := false
+    else
+        VB := false
+
+if not RO
+    cast := na
+
+
+color_out = if VB
+    VB_color = color.rgb(color.r(VB_color_input), color.g(VB_color_input), color.b(VB_color_input), color_transp)
+else
+    ML_color = color.rgb(color.r(ML_color_input), color.g(ML_color_input), color.b(ML_color_input), color_transp)
+
+
+plot(cast, 'Motion Line', color=color_out, offset=displacement)
+plot(cast, 'Dots', color=color_out, style=plot.style_circles, offset=displacement)
