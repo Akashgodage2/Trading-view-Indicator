@@ -1,0 +1,35 @@
+// Input for clarity
+up_color = color.green
+dn_color = color.red
+
+// Access LT and UT from your main indicator (replace with actual access method)
+lt = input(title="LT", source=input.source.close, defval=na)
+ut = input(title="UT", source=input.source.close, defval=na)
+
+// Variables for counts and positions
+up_count = 0
+dn_count = 0
+up_pos = na
+dn_pos = na
+
+// Check for valid LT and UT values
+if !isnan(lt) and !isnan(ut)
+
+  // Check for UP/DN conditions and update counts/positions
+  if high > high[1] and low >= low[1]
+    up_count += 1
+    up_pos = high
+  if high <= high[1] and low < low[1]
+    dn_count += 1
+    dn_pos = low
+
+  // Plot UP count above UT, DN count below LT
+  plotchar(ut, str.tostring(up_count), textcolor=up_color, textlocation=location.abovebar)
+  plotchar(lt, str.tostring(dn_count), textcolor=dn_color, textlocation=location.belowbar)
+
+// Reset counts at the beginning of each bar
+else
+  up_count = 0
+  dn_count = 0
+  up_pos = na
+  dn_pos = na
