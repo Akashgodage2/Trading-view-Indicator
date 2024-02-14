@@ -1,5 +1,5 @@
 //@version=5
-indicator("Nadaraya-Watson Envelope [LuxAlgo]", "LuxAlgo - Nadaraya-Watson Envelope", overlay = true, max_lines_count = 500, max_labels_count = 500, max_bars_back=500)
+indicator("Envelope", " - akash Envelope", overlay = true, max_lines_count = 500, max_labels_count = 500, max_bars_back=500)
 //------------------------------------------------------------------------------
 //Settings
 //-----------------------------------------------------------------------------{
