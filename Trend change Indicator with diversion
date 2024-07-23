@@ -1,0 +1,73 @@
+//@version=5
+indicator("Enhanced Trend Change Indicator with RSI", overlay=false)
+
+// Input settings for MACD
+fastLength = input.int(12, title="MACD Fast Length")
+slowLength = input.int(26, title="MACD Slow Length")
+signalSmoothing = input.int(9, title="MACD Signal Smoothing")
+
+// Input settings for RSI
+rsiLength = input.int(14, title="RSI Length")
+rsiOverbought = input.int(70, title="RSI Overbought Level")
+rsiOversold = input.int(30, title="RSI Oversold Level")
+
+// Calculate MACD and Signal Line
+[macdLine, signalLine, _] = ta.macd(close, fastLength, slowLength, signalSmoothing)
+
+// Smoothed MACD and Signal Line (Optional)
+smoothedMacdLine = ta.sma(macdLine, 3)
+smoothedSignalLine = ta.sma(signalLine, 3)
+
+// Calculate RSI
+rsiValue = ta.rsi(close, rsiLength)
+
+// Calculate moving average as a trend filter
+maLength = input.int(50, title="MA Length")
+maTrend = ta.sma(close, maLength)
+
+// Calculate volume moving average for confirmation
+volumeMaLength = input.int(20, title="Volume MA Length")
+volumeMa = ta.sma(volume, volumeMaLength)
+
+// Plot MACD and Signal Line
+plot(macdLine, title="MACD", color=color.blue)
+plot(signalLine, title="Signal Line", color=color.red)
+
+// Plot RSI
+hline(rsiOverbought, "Overbought", color=color.red)
+hline(rsiOversold, "Oversold", color=color.green)
+plot(rsiValue, title="RSI", color=color.purple)
+
+// Calculate MACD Histogram
+histogram = macdLine - signalLine
+
+// Plot MACD Histogram
+plot(histogram, title="Histogram", color=color.orange, style=plot.style_histogram)
+
+// Highlight trend change areas
+bgcolor((macdLine > signalLine) ? color.new(color.green, 90) : color.new(color.red, 90))
+
+// Enhanced signal logic with RSI confirmation and additional filters
+isBullishCrossover = ta.crossover(macdLine, signalLine)
+isBearishCrossover = ta.crossunder(macdLine, signalLine)
+
+isBullishSignal = isBullishCrossover and (rsiValue < rsiOverbought) and (close > maTrend) and (volume > volumeMa)
+isBearishSignal = isBearishCrossover and (rsiValue > rsiOversold) and (close < maTrend) and (volume > volumeMa)
+
+// Plot enhanced signals
+plotshape(series=isBullishSignal ? macdLine : na, title="Bullish Signal", location=location.belowbar, color=color.green, style=shape.labelup, text="Buy")
+plotshape(series=isBearishSignal ? macdLine : na, title="Bearish Signal", location=location.abovebar, color=color.red, style=shape.labeldown, text="Sell")
+
+// Exact entry point for trades
+if (isBullishSignal)
+    alert("Buy Signal: MACD Line crossed above Signal Line with RSI below Overbought level and price above MA Trend", alert.freq_once_per_bar)
+    
+if (isBearishSignal)
+    alert("Sell Signal: MACD Line crossed below Signal Line with RSI above Oversold level and price below MA Trend", alert.freq_once_per_bar)
+
+// Detect and plot divergence
+bullishDivergence = ta.lowest(close, rsiLength) and ta.lowest(rsiValue, rsiLength) and (rsiValue < rsiOversold)
+bearishDivergence = ta.highest(close, rsiLength) and ta.highest(rsiValue, rsiLength) and (rsiValue > rsiOverbought)
+
+plotshape(series=bullishDivergence ? low : na, title="Bullish Divergence", location=location.belowbar, color=color.blue, style=shape.triangleup, text="Div")
+plotshape(series=bearishDivergence ? high : na, title="Bearish Divergence", location=location.abovebar, color=color.orange, style=shape.triangledown, text="Div")
