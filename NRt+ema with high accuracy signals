@@ -1,0 +1,1252 @@
+//@version=5
+
+max_lines                   = 100
+max_labels                  = 200
+max_bars                    = 500
+
+indicator('Motion Line (NRT)', overlay = true, max_lines_count = max_lines, max_labels_count = max_labels, max_bars_back = max_bars)
+
+// Inputs  //#region
+const string BDMO           = 'Direction based on Momentum'
+const string BDOR           = 'Direction based on Order of Occurrence'
+const string BDRB           = 'Direction based on previous Range Bounds'
+const string BDRT           = 'Direction based on retracement to last Turning Point'
+const string BDCR           = 'Direction based on current Bar Range'
+const string BDPR           = 'Direction based on previous Bar Range'
+const string BDCO           = 'Direction based on current Open'
+const string BDPC           = 'Direction based on previous Close'
+const string FCIB           = 'IB Close as the last Close'
+const string FCNI           = 'Previous non-IB Close as the last Close'
+
+TFML                        = input.timeframe('', 'Main Timeframe', group = 'Timeframe')
+TF00                        = input.timeframe('360', 'Lower Timeframe', group = 'Timeframe')
+TF01                        = input.timeframe('1D', '1st Timeframe', group = 'Timeframe')
+TF02                        = input.timeframe('1W', '2nd Timeframe', group = 'Timeframe')
+TF03                        = input.timeframe('1M', '3rd Timeframe', group = 'Timeframe')
+TF04                        = input.timeframe('6M', 'Upper Timeframe', group = 'Timeframe')
+TF_factor                   = input.float(3, 'TF Switch Factor', minval = 1, group = 'Timeframe')
+RC_input                    = input.string('Auto', 'Channel Type', options = ['None', 'Auto', 'Price', 'Time', 'Bias'], group = 'Channeling')
+// RC_ratios                   = input.bool(true, 'Use default ratios for channeling', group = 'Channeling')
+// RC_r00                      = input.float(0.000, 'Ratio 00', group = 'Channeling')
+// RC_r01                      = input.float(0.000, 'Ratio 01', group = 'Channeling')
+// RC_r02                      = input.float(0.000, 'Ratio 02', group = 'Channeling')
+// RC_r03                      = input.float(0.000, 'Ratio 03', group = 'Channeling')
+// RC_r04                      = input.float(0.000, 'Ratio 04', group = 'Channeling')
+// RC_r05                      = input.float(0.000, 'Ratio 05', group = 'Channeling')
+initiation_bar              = input.int(500, 'Bars Back', minval = 0, group = 'Initiation', tooltip = 'Overrides Initiation Time setting if set to a non-zero value.')
+initiation_time             = input.time(timestamp("01 Jan 1970 00:00 +0000"), 'Time', group = 'Initiation')
+MC_input                    = input.string('Auto', 'ML Count Labels', options = ['None', 'Auto', 'Tiny', 'Small', 'Normal', 'Large'], group = 'Style')
+TE_input                    = input.string('Auto', 'Trader Entry Labels', options = ['None', 'Auto', 'Tiny', 'Small', 'Normal'], group = 'Style')
+ML_color                    = input.color(#fafad2ff, 'Motion Line Color', group = 'Style')
+RL_color                    = input.color(#8b848800, 'Redundant Line Color', group = 'Style')
+RP_color                    = input.color(#8024dbff, 'Price Color', group = 'Style')
+PS_width                    = input.int(1, 'Price Stop Width', minval = 0, maxval = 4, group = 'Style')
+PS_length                   = input.int(20, 'Price Stop Length', group = 'Style')
+RT_color                    = input.color(#db8024ff, 'Time Color', group = 'Style')
+TS_width                    = input.int(1, 'Time Stop Width', minval = 0, maxval = 4, group = 'Style')
+TS_length                   = input.int(15, 'Time Stop Length', group = 'Style')
+RB_color                    = input.color(#2480dbff, 'Bias Color', group = 'Style')
+BS_width                    = input.int(1, 'Bias Stop Width', minval = 0, maxval = 4, group = 'Style')
+BS_length                   = input.int(10, 'Bias Stop Length', group = 'Style')
+time_shift                  = input.int(0, 'Displacement', maxval = 500, group = 'Style')
+VB_width                    = input.int(1, 'Violent Outside Bar Width', minval = 0, maxval = 4, group = 'Style')
+VB_setting                  = input.string(BDMO, 'Violent OB Setting', options = [BDMO, BDOR, BDRT , BDCR , BDPR , BDCO , BDPC], group = 'Experimental Options')
+VB_ratio                    = input.float(0.5, 'Range Specific V. OB Setting Ratio', minval = 0, maxval = 1, group = 'Experimental Options')
+OB_setting                  = input.string(BDMO, 'Normal OB Setting', options = [BDMO, BDOR, BDRB, BDRT , BDCR , BDPR , BDCO , BDPC], group = 'Experimental Options')
+OB_ratio                    = input.float(0.5, 'Range Specific N. OB Setting Ratio', minval = 0, maxval = 1, group = 'Experimental Options')
+IB_invCount                 = input.int(0, 'IB Invalidation Countdown', group = 'Experimental Options')
+IB_invRatio                 = input.float(0, 'IB Invalidation Ratio', minval = 0, maxval = 1, group = 'Experimental Options')
+IB_postSet                  = input.string(FCIB, 'Post IB Setting', options = [FCIB, FCNI], group = 'Experimental Options')
+NV_ignore                   = input.bool(false, 'Disqualify N. OB from transitioning to V. OB', group = 'Experimental Options')
+NV_useOBS                   = input.bool(true, 'Enforce N. OB setting for the transition', group = 'Experimental Options')  //#endregion
+
+
+// Main Variables
+var string  LTF             = na
+var string  TFCH            = na
+var         RCl             = array.new <line> ()
+var         VBl             = array.new <line> ()
+var         MCl             = array.new <label> ()
+var line    pStop           = line.new(na, na, na, na, xloc = xloc.bar_time)
+var line    tStop           = line.new(na, na, na, na, xloc = xloc.bar_time)
+var line    bStop           = line.new(na, na, na, na, xloc = xloc.bar_time)
+var label   live            = label.new(na, na, na, xloc = xloc.bar_time)
+var label   PEl             = label.new(na, na, na, xloc = xloc.bar_time)
+var label   TEl             = label.new(na, na, na, xloc = xloc.bar_time)
+var label   BEl             = label.new(na, na, na, xloc = xloc.bar_time)
+
+if barstate.isfirst
+    if VB_width != 0
+        for i = 0 to max_lines - 13
+            VBl.unshift(line.new(na, na, na, na, xloc = xloc.bar_time))
+            
+    if MC_input != 'None'
+        for i = 0 to max_labels - 5
+            MCl.unshift(label.new(na, na, na, xloc = xloc.bar_time))
+            
+// Data  //#region
+
+// ---Timeframes in seconds---
+//    1 D = 000 086 400 s
+//    1 W = 000 604 800 s
+//    1 M = 002 628 003 s !!!
+
+if RC_input != 'None'
+    if      timeframe.in_seconds(TFML) * TF_factor <= timeframe.in_seconds(TF01)
+        TFCH                := TF01
+    else if timeframe.in_seconds(TFML) * TF_factor <= timeframe.in_seconds(TF02)
+        TFCH                := TF02
+    else if timeframe.in_seconds(TFML) * TF_factor <= timeframe.in_seconds(TF03)
+        TFCH                := TF03
+    else if timeframe.in_seconds(TFML) * TF_factor <= timeframe.in_seconds(TF04)
+        TFCH                := TF04
+    else if timeframe.in_seconds(TFML) * TF_factor > timeframe.in_seconds(TF04)
+        runtime.error('Maximum timeframe limit has reached! Please update the timeframe settings or disable the channeling.')
+        
+if VB_setting == BDOR or OB_setting == BDOR
+    if      timeframe.in_seconds(TFML) >= timeframe.in_seconds(TF04) * TF_factor
+        LTF                 := TF04
+    else if timeframe.in_seconds(TFML) >= timeframe.in_seconds(TF03) * TF_factor
+        LTF                 := TF03
+    else if timeframe.in_seconds(TFML) >= timeframe.in_seconds(TF02) * TF_factor
+        LTF                 := TF02
+    else if timeframe.in_seconds(TFML) >= timeframe.in_seconds(TF01) * TF_factor
+        LTF                 := TF01
+    else if timeframe.in_seconds(TFML) >= timeframe.in_seconds(TF00)
+        LTF                 := TF00
+    else
+        runtime.error('The chart timeframe must be greater or equal to the Lower Timeframe!')
+        
+else
+    LTF                     := timeframe.period
+    
+[FOTM, FHTM, FLTM, FCTM]    = request.security(syminfo.tickerid, TFML, [open, high, low, close], gaps = barmerge.gaps_on, lookahead = barmerge.lookahead_on)
+
+[FOCH, FHCH, FLCH, FCCH]    = request.security(syminfo.tickerid, TFCH, [open, high, low, close], gaps = barmerge.gaps_on, lookahead = barmerge.lookahead_on)
+
+[LTFH, LTFL]                = request.security_lower_tf(syminfo.tickerid, LTF, [high, low])  //#endregion
+
+// Functions
+direction(setting, isVB, FO, FH, FL, FC, LTFH, LTFL, pH, pL, pC, TP, ML) =>
+    int     out             = na
+    float   cLH             = math.log(FH)
+    float   cLL             = math.log(FL)
+    float   cLC             = math.log(FC)
+    float   pLH             = math.log(pH)
+    float   pLL             = math.log(pL)
+    float   pLT             = math.log(TP)
+    float   ratio           = switch isVB
+        true    => VB_ratio
+        false   => OB_ratio
+        
+    switch setting
+        BDMO =>
+            if isVB
+                if      ML == pL
+                    out     :=  1
+                else if ML == pH
+                    out     := -1
+            else
+                if      ML == pL
+                    out     := -1
+                else if ML == pH
+                    out     :=  1
+                    
+        BDOR =>
+            Ix01 = LTFH.indexof(LTFH.max())
+            Ix02 = LTFL.indexof(LTFL.min())
+            
+            if Ix01 == -1 or Ix02 == -1
+                runtime.error('Data request from the lower timeframe failed!')
+            else if Ix01 < Ix02
+                out         := -1
+            else if Ix01 > Ix02
+                out         :=  1
+            else
+                if (cLC - cLL) / (cLH - cLL) < 0.5
+                    out     := -1
+                else
+                    out     :=  1
+                    
+        BDRT =>
+            if ML > TP
+                if (cLC - pLT) / (math.log(ML) - pLT) < ratio
+                    out     := -1
+                else
+                    out     :=  1
+                    
+            else
+                if (cLC - pLT) / (math.log(ML) - pLT) > ratio
+                    out     := -1
+                else
+                    out     :=  1
+                    
+        BDCR =>
+            if (cLC - cLL) / (cLH - cLL) < ratio
+                out         := -1
+            else
+                out         :=  1
+                
+        BDPR =>
+            if (cLC - pLL) / (pLH - pLL) < ratio
+                out         := -1
+            else
+                out         :=  1
+                
+        BDCO =>
+            if      FC < FO
+                out         := -1
+            else if FC > FO
+                out         :=  1
+            else
+                if (cLC - cLL) / (cLH - cLL) < 0.5
+                    out     := -1
+                else
+                    out     :=  1
+                    
+        BDPC =>
+            if      FC < pC
+                out         := -1
+            else if FC > pC
+                out         :=  1
+            else
+                if (cLC - cLL) / (cLH - cLL) < 0.5
+                    out     := -1
+                else
+                    out     :=  1
+                    
+        BDRB =>
+            if      FC < pL
+                out         := -1
+            else if FC > pH
+                out         :=  1
+            else
+                if      ML == pL
+                    out     := -1
+                else if ML == pH
+                    out     :=  1
+                    
+    out
+    
+linearEq(x, slope, b) =>
+    float   y               = na
+    y                       := slope * x + b
+    
+matchX(x, y, r, index, indexOffset, FH, FL, TF, HTF) =>
+    int     out             = x
+    int     n               = index.get(0) - x - indexOffset
+    int     count           = math.floor(timeframe.in_seconds(HTF) / timeframe.in_seconds(TF))
+
+    if      r == -1
+        for i = 0 to count
+            if FH.get(n + i) == y
+                out         := index.get(n + i)
+                break
+                
+            if (n - i) < 0
+                break
+            else if FH.get(n - i) == y
+                out         := index.get(n - i)
+                break
+                
+    else if r ==  1
+        for i = 0 to count
+            if FL.get(n + i) == y
+                out         := index.get(n + i)
+                break
+                
+            if (n - i) < 0
+                break
+            else if FL.get(n - i) == y
+                out         := index.get(n - i)
+                break
+                
+    out
+    
+editLine(id, barIndex, x1, y1, x2, y2, shift, lineColor, lineStyle, lineWidth) =>
+    if (barIndex - math.min(x1, x2) - shift) < max_bars
+        line.set_xy1(id, time('', barIndex - x1 - shift), y1)
+        line.set_xy2(id, time('', barIndex - x2 - shift), y2)
+        line.set_color(id, lineColor)
+        line.set_style(id, lineStyle)
+        line.set_width(id, lineWidth)
+        
+editLabel(id, barIndex, x, y, shift, labelText, yloc, labelColor, styleCondition, textColor, labelSize, textAlign) =>
+    if (barIndex - x - shift) < max_bars
+        label.set_x(id, time('', barIndex - x - shift))
+        label.set_y(id, y)
+        label.set_text(id, labelText)
+        label.set_yloc(id, yloc)
+        label.set_color(id, labelColor)
+        label.set_textcolor(id, textColor)
+        label.set_size(id, labelSize)
+        label.set_textalign(id, textAlign)
+        
+        if na(labelText)
+            if      styleCondition ==  1
+                label.set_style(id, label.style_triangleup)
+            else if styleCondition == -1
+                label.set_style(id, label.style_triangledown)
+                
+        else
+            if      styleCondition ==  1
+                label.set_style(id, label.style_label_up)
+            else if styleCondition == -1
+                label.set_style(id, label.style_label_down)
+                
+MotionLine(FO, FH, FL, FC, LTFH, LTFL) =>
+    var bool    PQ          = false
+    var int     index       = -1
+    var int     index0      = na
+    var float   QO          = na
+    var float   QH          = na
+    var float   QL          = na
+    var float   QC          = na
+    var float   ML01        = na
+    var float   ML02        = na
+    var float   MLy0        = na
+    var float   MLy1        = na
+    var float   MLy2        = na
+    var float   MLx0        = 0
+    var float   MLx1        = 0
+    var float   PEy         = na
+    var float   PEx         = na
+    var float   TEy         = na
+    var float   TEx         = na
+    var float   BEy         = na
+    var float   BEx         = na
+    var float   PSy         = na
+    var float   PSx         = na
+    var float   TSy         = na
+    var float   TSx         = na
+    var float   BSy         = na
+    var float   BSx         = na
+    var float   BRym        = 0
+    var float   BRxm        = 0
+    var int     Td0         = 0
+    var int     Td1         = 0
+    var int     MC          = 0
+    var int     IC          = 0
+    var int     VC          = 0
+    var int     VT          = 0
+    var int     MD          = 0
+    var int     CE          = 0
+    var int     CD          = 0
+    var bool    VB          = false
+    var bool    VU          = false
+    var bool    VD          = false
+    var bool    NV          = false
+    var color   color01     = na
+    var color   color02     = na
+    var color   color03     = na
+    var         color04     = array.new <color> (max_labels, na)
+    var         MLy         = array.new <float> (3, na)
+    var         MLx         = array.new <float> (3, 0)
+    var         VBy         = array.new <float> (max_lines * 2, na)
+    var         VBx         = array.new <int>   (max_lines, na)
+    var         TPy         = array.new <float> (max_labels, na)
+    var         TPx         = array.new <int>   (max_labels, na)
+    var         TPr         = array.new <int>   (max_labels, na)
+    var         TPn         = array.new <int>   (max_labels, na)
+    var         BRy         = array.new <float> ()
+    var         BRx         = array.new <int>   ()
+    var         Pd          = array.new <int>   (2, 0)
+    var         Td          = array.new <int>   (2, 0)
+    var         Bd          = array.new <int>   (2, 0)
+    var         Ry          = array.new <float> ()
+    var         Rx          = array.new <int>   ()
+    var         Rd          = array.new <int>   ()
+    var         Rc          = array.new <int>   ()
+    var         indexA      = array.new <int>   ()
+    var         FHA         = array.new <float> ()
+    var         FLA         = array.new <float> ()
+    int         TPc         = 0
+    
+    if not PQ and not na(FO)
+        if      initiation_bar != 0 and last_bar_index - bar_index <= initiation_bar
+            PQ              := true
+            index0          := bar_index
+        else if initiation_bar == 0 and initiation_time <= time
+            PQ              := true
+            index0          := bar_index
+
+    if PQ
+        index += 1
+        indexA.unshift(index)
+        FHA.unshift(FH)
+        FLA.unshift(FL)
+        
+        if not na(FO)
+            if index == 0
+                QO          := FO
+                QH          := FH
+                QL          := FL
+                QC          := FC
+                
+            UP              = FH >  QH[1] and FL >= QL[1]
+            DN              = FH <= QH[1] and FL <  QL[1]
+            OB              = FH >  QH[1] and FL <  QL[1]
+            IB              = FH <= QH[1] and FL >= QL[1]
+            GU              = FO >  QC[1] and FL >  QC[1]
+            GD              = FO <  QC[1] and FH <  QC[1]
+            
+            if UP
+                if GU
+                    QL      := QC[1]
+                else
+                    QL      := FL
+                    
+                QO          := FO
+                QH          := FH
+                QC          := FC
+                ML01        := QH
+                ML02        := QH
+                VB          := false
+                NV          := false
+                IC          := 0
+                
+            else if DN
+                if GD
+                    QH      := QC[1]
+                else
+                    QH      := FH
+                    
+                QO          := FO
+                QL          := FL
+                QC          := FC
+                ML01        := QL
+                ML02        := QL
+                VB          := false
+                NV          := false
+                IC          := 0
+                
+            else if OB
+                QO          := FO
+                QH          := FH
+                QL          := FL
+                QC          := FC
+                VU          := TPr.get(0) ==  1 and TPy.get(0) > FL
+                VD          := TPr.get(0) == -1 and TPy.get(0) < FH
+                VB          := VU or VD
+                NV          := false
+                IC          := 0
+                
+                if not VB
+                    MD      := direction(OB_setting, false, FO, FH, FL, FC, LTFH, LTFL, QH[1], QL[1], QC[1], TPy.get(0), MLy0)
+                    
+                    if      MD ==  1
+                        ML01 := QH
+                        ML02 := QH
+                    else if MD == -1
+                        ML01 := QL
+                        ML02 := QL
+                        
+                    if not NV_ignore
+                        if      ML01 > MLy0 and MLy0 < MLy1 and MLy0 > FL
+                            VU := true
+                        else if ML01 < MLy0 and MLy0 > MLy1 and MLy0 < FH
+                            VD := true
+                            
+                        VB  := VU or VD
+                        NV  := VB
+                        
+                if VU
+                    MC      += 1
+                    VT      += 1
+                    
+                    VBy.unshift(QH)
+                    VBy.unshift(QL)
+                    VBx.unshift(index)
+                    
+                    if NV and NV_useOBS
+                        MD  := direction(OB_setting, false, FO, FH, FL, FC, LTFH, LTFL, QH[1], QL[1], QC[1], TPy.get(0), MLy0)
+                    else
+                        MD  := direction(VB_setting, true, FO, FH, FL, FC, LTFH, LTFL, QH[1], QL[1], QC[1], TPy.get(0), MLy0)
+                        
+                    if      MD ==  1
+                        MLy.unshift(QL)
+                        MLy.unshift(QH)
+                        MLx.unshift(index)
+                        MLx.unshift(index + 0.5)
+                        
+                        if (VC % 2) == 1
+                            ML01 := QL
+                            ML02 := QH
+                        else
+                            ML01 := QH
+                            ML02 := QL
+                            
+                        if NV
+                            TPn.unshift(MC)
+                            TPc := 1
+                        else
+                            TPn.unshift(MC - 1)
+                            TPr.unshift(-1)
+                            TPx.unshift(int(MLx0))
+                            TPy.unshift(MLy.get(2))
+                            TPn.unshift(1)
+                            TPc := 2
+                            
+                        TPr.unshift(1)
+                        TPx.unshift(index)
+                        TPy.unshift(QL)
+                        MC  := 1
+                        
+                    else if MD == -1
+                        MLy.unshift(QH)
+                        MLy.unshift(QL)
+                        MLx.unshift(index)
+                        MLx.unshift(index + 0.5)
+                        
+                        if (VC % 2) == 1
+                            ML01 := QH
+                            ML02 := QL
+                        else
+                            ML01 := QL
+                            ML02 := QH
+                            
+                        TPn.unshift(MC)
+                        TPr.unshift(-1)
+                        TPx.unshift(index)
+                        TPy.unshift(QH)
+                        TPc := 1
+                        MC  := 1
+                        
+                else if VD
+                    MC      += 1
+                    VT      += 1
+                    
+                    VBy.unshift(QH)
+                    VBy.unshift(QL)
+                    VBx.unshift(index)
+                    
+                    if NV and NV_useOBS
+                        MD  := direction(OB_setting, false, FO, FH, FL, FC, LTFH, LTFL, QH[1], QL[1], QC[1], TPy.get(0), MLy0)
+                    else
+                        MD  := direction(VB_setting, true, FO, FH, FL, FC, LTFH, LTFL, QH[1], QL[1], QC[1], TPy.get(0), MLy0)
+                        
+                    if      MD ==  1
+                        MLy.unshift(QL)
+                        MLy.unshift(QH)
+                        MLx.unshift(index)
+                        MLx.unshift(index + 0.5)
+                        
+                        if (VC % 2) == 1
+                            ML01 := QL
+                            ML02 := QH
+                        else
+                            ML01 := QH
+                            ML02 := QL
+                            
+                        TPn.unshift(MC)
+                        TPr.unshift(1)
+                        TPx.unshift(index)
+                        TPy.unshift(QL)
+                        TPc := 1
+                        MC  := 1
+                        
+                    else if MD == -1
+                        MLy.unshift(QH)
+                        MLy.unshift(QL)
+                        MLx.unshift(index)
+                        MLx.unshift(index + 0.5)
+                        
+                        if (VC % 2) == 1
+                            ML01 := QH
+                            ML02 := QL
+                        else
+                            ML01 := QL
+                            ML02 := QH
+                            
+                        if NV
+                            TPn.unshift(MC)
+                            TPc := 1
+                        else
+                            TPn.unshift(MC - 1)
+                            TPr.unshift(1)
+                            TPx.unshift(int(MLx0))
+                            TPy.unshift(MLy.get(2))
+                            TPn.unshift(1)
+                            TPc := 2
+                            
+                        TPr.unshift(-1)
+                        TPx.unshift(index)
+                        TPy.unshift(QH)
+                        MC  := 1
+                        
+            else if IB
+                VB          := false
+                NV          := false
+                IC          += 1
+                
+                if IB_postSet == FCIB
+                    QC      := FC
+                    
+                if IB_invCount != 0 and IB_invCount <= IC and (FH - FL) > (QH - QL) * IB_invRatio
+                    QO      := FO
+                    QH      := FH
+                    QL      := FL
+                    QC      := FC
+                    IC      := 0
+                    
+                    if      MLy0 == QL[1]
+                        ML01 := QH
+                        ML02 := QH
+                    else if MLy0 == QH[1]
+                        ML01 := QL
+                        ML02 := QL
+                        
+                else
+                    ML01    := na
+                    ML02    := na
+                    
+            if not na(ML01)
+                if not VB
+                    MC      += 1
+                    
+                    MLy.unshift(ML01)
+                    MLx.unshift(index)
+                    
+                MLy0        := MLy.get(0)
+                MLy1        := MLy.get(1)
+                MLy2        := MLy.get(2)
+                
+                MLx0        := MLx.get(0)
+                MLx1        := MLx.get(1)
+                
+                if not VB[index - int(MLx1)]
+                    VC      := 0
+                else if VB[index - int(MLx1)]
+                    VC      += 1
+                    
+                if not VB
+                    if      MLy0 > MLy1 and MLy1 < MLy2
+                        TPn.unshift(MC - 1)
+                        TPr.unshift(1)
+                        TPx.unshift(int(MLx1))
+                        TPy.unshift(MLy1)
+                        TPc := 1
+                        MC  := 1
+                    else if MLy0 < MLy1 and MLy1 > MLy2
+                        TPn.unshift(MC - 1)
+                        TPr.unshift(-1)
+                        TPx.unshift(int(MLx1))
+                        TPy.unshift(MLy1)
+                        TPc := 1
+                        MC  := 1
+                        
+                // if  not VB
+                    if      TPy.get(1) > TPy.get(0) and TPy.get(1) < MLy0 and Pd.get(0) !=  1
+                        PEy := TPy.get(1)
+                        PEx := MLx0
+                        PSy := TPy.get(0)
+                        PSx := TPx.get(0)
+                        Pd.fill(1)
+                    else if TPy.get(1) < TPy.get(0) and TPy.get(1) > MLy0 and Pd.get(0) != -1
+                        PEy := TPy.get(1)
+                        PEx := MLx0
+                        PSy := TPy.get(0)
+                        PSx := TPx.get(0)
+                        Pd.fill(-1)
+                        
+                else if NV
+                    if      TPy.get(2) > TPy.get(1) and TPy.get(2) < MLy1 and Pd.get(0) !=  1
+                        PEy := TPy.get(2)
+                        PEx := MLx1
+                        PSy := TPy.get(1)
+                        PSx := TPx.get(1)
+                        Pd.fill(1)
+                    else if TPy.get(2) < TPy.get(1) and TPy.get(2) > MLy1 and Pd.get(0) != -1
+                        PEy := TPy.get(2)
+                        PEx := MLx1
+                        PSy := TPy.get(1)
+                        PSx := TPx.get(1)
+                        Pd.fill(-1)
+                        
+                else if TPc == 1
+                    if      TPy.get(2) > TPy.get(1) and TPy.get(2) < MLy1 and Pd.get(0) !=  1
+                        PEy := TPy.get(2)
+                        PEx := MLx1
+                        PSy := TPy.get(0)
+                        PSx := TPx.get(0)
+                        Pd.unshift(1)
+                    else if TPy.get(2) < TPy.get(1) and TPy.get(2) > MLy1 and Pd.get(0) != -1
+                        PEy := TPy.get(2)
+                        PEx := MLx1
+                        PSy := TPy.get(0)
+                        PSx := TPx.get(0)
+                        Pd.unshift(-1)
+                        
+                    if      TPy.get(1) > TPy.get(0) and TPy.get(1) < MLy0 and Pd.get(0) !=  1
+                        PEy := TPy.get(1)
+                        PEx := MLx1
+                        PSy := TPy.get(0)
+                        PSx := TPx.get(0)
+                        Pd.unshift(1)
+                    else if TPy.get(1) < TPy.get(0) and TPy.get(1) > MLy0 and Pd.get(0) != -1
+                        PEy := TPy.get(1)
+                        PEx := MLx1
+                        PSy := TPy.get(0)
+                        PSx := TPx.get(0)
+                        Pd.unshift(-1)
+                        
+                else if TPc == 2
+                    if      TPy.get(2) > TPy.get(1) and TPy.get(2) < MLy1 and Pd.get(0) !=  1
+                        PEy := TPy.get(2)
+                        PEx := MLx1
+                        PSy := TPy.get(0)
+                        PSx := TPx.get(0)
+                        Pd.unshift(1)
+                    else if TPy.get(2) < TPy.get(1) and TPy.get(2) > MLy1 and Pd.get(0) != -1
+                        PEy := TPy.get(2)
+                        PEx := MLx1
+                        PSy := TPy.get(0)
+                        PSx := TPx.get(0)
+                        Pd.unshift(-1)
+                        
+                    if      TPy.get(1) > TPy.get(0) and TPy.get(1) < MLy0 and Pd.get(0) !=  1
+                        PEy := TPy.get(1)
+                        PEx := MLx1
+                        PSy := TPy.get(0)
+                        PSx := TPx.get(0)
+                        Pd.unshift(1)
+                    else if TPy.get(1) < TPy.get(0) and TPy.get(1) > MLy0 and Pd.get(0) != -1
+                        PEy := TPy.get(1)
+                        PEx := MLx1
+                        PSy := TPy.get(0)
+                        PSx := TPx.get(0)
+                        Pd.unshift(-1)
+                        
+                if      Pd.get(0) ==  1 and TPr.get(0) ==  1 and barstate.isconfirmed
+                    PSy     := TPy.get(0)
+                    PSx     := TPx.get(0)
+                    
+                else if Pd.get(0) == -1 and TPr.get(0) == -1 and barstate.isconfirmed
+                    PSy     := TPy.get(0)
+                    PSx     := TPx.get(0)
+                    
+                Td.fill(Td0)
+                
+                if Td0 !=  1
+                    if  not VB
+                        if TPr.get(0) ==  1 and MC > TPn.get(0)
+                            TEy := MLy1
+                            TEx := MLx0
+                            TSy := TPy.get(0)
+                            TSx := TPx.get(0)
+                            Td.unshift(1)
+                            
+                    else if VB and MD == -1
+                        if TPr.get(1) ==  1 and TPn.get(0) > TPn.get(1)
+                            TEy := MLy2
+                            TEx := MLx1
+                            TSy := TPy.get(1)
+                            TSx := TPx.get(1)
+                            Td.fill(1)
+                            
+                if Td0 != -1
+                    if  not VB
+                        if TPr.get(0) == -1 and MC > TPn.get(0)
+                            TEy := MLy1
+                            TEx := MLx0
+                            TSy := TPy.get(0)
+                            TSx := TPx.get(0)
+                            Td.unshift(-1)
+                            
+                    else if VB and MD ==  1
+                        if TPr.get(1) == -1 and TPn.get(0) > TPn.get(1)
+                            TEy := MLy2
+                            TEx := MLx1
+                            TSy := TPy.get(1)
+                            TSx := TPx.get(1)
+                            Td.fill(-1)
+                            
+                if      Td.get(0) ==  1
+                    if  not VB or (VB and MD == -1)
+                        if TPr.get(0) == -1
+                            if      MC <= TPn.get(0) and MLy0 <= TSy
+                                TEy := na
+                                TEx := na
+                                TSy := na
+                                TSx := MLx0
+                                Td.unshift(0)
+                            else if MC == TPn.get(0) and barstate.isconfirmed
+                                TSy := MLy0
+                                TSx := MLx0
+                                
+                    else if MD ==  1
+                        if TPr.get(1) == -1
+                            if      TPn.get(0) <= TPn.get(1) and MLy1 <= TSy
+                                TEy := na
+                                TEx := na
+                                TSy := na
+                                TSx := MLx1
+                                Td.fill(0)
+                            else if TPn.get(0) == TPn.get(1) and barstate.isconfirmed
+                                TSy := MLy1
+                                TSx := MLx1
+                                
+                else if Td.get(0) == -1
+                    if  not VB or (VB and MD ==  1)
+                        if TPr.get(0) ==  1
+                            if      MC <= TPn.get(0) and MLy0 >= TSy
+                                TEy := na
+                                TEx := na
+                                TSy := na
+                                TSx := MLx0
+                                Td.unshift(0)
+                            else if MC == TPn.get(0) and barstate.isconfirmed
+                                TSy := MLy0
+                                TSx := MLx0
+                                
+                    else if MD == -1
+                        if TPr.get(1) ==  1
+                            if      TPn.get(0) <= TPn.get(1) and MLy1 >= TSy
+                                TEy := na
+                                TEx := na
+                                TSy := na
+                                TSx := MLx1
+                                Td.fill(0)
+                            else if TPn.get(0) == TPn.get(1) and barstate.isconfirmed
+                                TSy := MLy1
+                                TSx := MLx1
+                                
+                Td0         := Td.get(0)
+                Td1         := Td.get(1)
+                
+                n = switch VB
+                    true    => 1
+                    false   => 0
+                    
+                for k = 0 to n
+                    if      Bd.get(0) ==  1
+                        if  not VB or (VB and MD == -1)
+                            if MLy0 < BSy
+                                BEy := BSy
+                                BEx := MLx0
+                                BRxm := BSx
+                                Bd.unshift(-1)
+                                
+                        else if MD ==  1
+                            if MLy1 < BSy
+                                BEy := BSy
+                                BEx := MLx0
+                                BRxm := BSx
+                                Bd.unshift(-1)
+                                
+                    else if Bd.get(0) == -1
+                        if  not VB or (VB and MD ==  1)
+                            if MLy0 > BSy
+                                BEy := BSy
+                                BEx := MLx0
+                                BRxm := BSx
+                                Bd.unshift(1)
+                                
+                        else if MD == -1
+                            if MLy1 > BSy
+                                BEy := BSy
+                                BEx := MLx0
+                                BRxm := BSx
+                                Bd.unshift(1)
+                                
+                    if Bd.get(0) ==  1 or (Bd.get(0) == 0 and TPr.get(0) == -1)
+                        BRy.clear()
+                        BRx.clear()
+                        
+                        for i = 0 to max_bars - 1
+                            if i > index - BRxm
+                                break
+                            else if not na(ML01[i])
+                                BRy.push(QL[i])
+                                BRx.push(index[i])
+                                
+                        BRym := BRy.min()
+                        BRxm := BRx.get(BRy.indexof(BRym))
+                        BRys  = BRy.slice(0, BRy.indexof(BRym) + 1)
+                        BRxs  = BRx.slice(0, BRy.indexof(BRym) + 1)
+                        BSy  := BRys.max()
+                        BSx  := BRxs.get(BRys.indexof(BSy))
+                        
+                        int j = 0
+                        i = index - int(BSx)
+                        
+                        while i <= index - BRxm
+                            if not na(ML01[i])
+                                if QL[i] < BSy
+                                    BSy := QL[i]
+                                    BSx := index[i]
+                                    j += 1
+                                    
+                            if j == 3
+                                break
+                            else
+                                i += 1
+                                
+                        if Bd.get(0) == 0
+                            BEy := BSy
+                            BEx := BSx
+                            Bd.unshift(1)
+                            
+                    if Bd.get(0) == -1 or (Bd.get(0) == 0 and TPr.get(0) ==  1)
+                        BRy.clear()
+                        BRx.clear()
+                        
+                        for i = 0 to max_bars - 1
+                            if i > index - BRxm
+                                break
+                            else if not na(ML01[i])
+                                BRy.push(QH[i])
+                                BRx.push(index[i])
+                                
+                        BRym := BRy.max()
+                        BRxm := BRx.get(BRy.indexof(BRym))
+                        BRys  = BRy.slice(0, BRy.indexof(BRym) + 1)
+                        BRxs  = BRx.slice(0, BRy.indexof(BRym) + 1)
+                        BSy  := BRys.min()
+                        BSx  := BRxs.get(BRys.indexof(BSy))
+                        
+                        int j = 0
+                        i = index - int(BSx)
+                        
+                        while i <= index - BRxm
+                            if not na(ML01[i])
+                                if QH[i] > BSy
+                                    BSy := QH[i]
+                                    BSx := index[i]
+                                    j += 1
+                                    
+                            if j == 3
+                                break
+                            else
+                                i += 1
+                                
+                        if Bd.get(0) == 0
+                            BEy := BSy
+                            BEx := BSx
+                            Bd.unshift(-1)
+                            
+                Ry          := array.from(TEy, BEy, PEy)
+                Rx          := array.from(int(TEx), int(BEx), int(PEx))
+                Rd          := array.from(Td0, Bd.get(0), Pd.get(0))
+                Rc          := array.from(2, 3, 1)
+                
+                if not na(Rx.min())
+                    switch Rx.min()
+                        int(TEx) => CD := Td0
+                        int(BEx) => CD := Bd.get(0)
+                        int(PEx) => CD := Pd.get(0)
+                        
+                    for i = 1 to 3
+                        j = switch CD
+                            1  => Ry.indexof(Ry.min())
+                            -1 => Ry.indexof(Ry.max())
+                            
+                        if Rd.get(j) != CD
+                            Ry.remove(j)
+                            Rd.remove(j)
+                            Rc.remove(j)
+                        else
+                            CE := Rc.get(j)
+                            break
+                            
+            color01         := bool(VC) and (VC % 2) == 1 ? RL_color : ML_color
+            color02         := bool(VC) and (VC % 2) == 0 ? RL_color : ML_color
+            
+            if     Td0 ==  1
+                if TPr.get(0) == -1
+                    color03 := #989aa4ff
+                    
+                    if      TPc == 1
+                        color04.unshift(#08f855ff)
+                    else if TPc == 2
+                        color04.unshift(#989aa4ff)
+                        color04.unshift(#08f855ff)
+                        
+                else
+                    color03 := #08f855ff
+                    
+                    if      TPc == 1
+                        color04.unshift(#989aa4ff)
+                    else if TPc == 2
+                        color04.unshift(#08f855ff)
+                        color04.unshift(#989aa4ff)
+                        
+            else if Td0 == -1
+                if TPr.get(0) ==  1
+                    color03 := #989aa4ff
+                    
+                    if      TPc == 1
+                        color04.unshift(#f8083bff)
+                    else if TPc == 2
+                        color04.unshift(#989aa4ff)
+                        color04.unshift(#f8083bff)
+                        
+                else
+                    color03 := #f8083bff
+                    
+                    if      TPc == 1
+                        color04.unshift(#989aa4ff)
+                    else if TPc == 2
+                        color04.unshift(#f8083bff)
+                        color04.unshift(#989aa4ff)
+                        
+            else
+                color03 := #ffdb3bff
+                
+                if      TPc == 1
+                    if not VB
+                        if      Td0[1] == 0
+                            color04.unshift(#ffdb3bff)
+                        else if Td0[1] ==  1
+                            color04.unshift(#08f855ff)
+                        else if Td0[1] == -1
+                            color04.unshift(#f8083bff)
+                            
+                    else
+                        if      Td1 == 0
+                            color04.unshift(#ffdb3bff)
+                        else if Td1 ==  1
+                            color04.unshift(#08f855ff)
+                        else if Td1 == -1
+                            color04.unshift(#f8083bff)
+                            
+                else if TPc == 2
+                    if      Td0[1] == 0
+                        color04.unshift(#ffdb3bff)
+                        color04.unshift(#ffdb3bff)
+                    else if Td0[1] ==  1
+                        if      Td1 == 0
+                            if TPr.get(0) == -1
+                                color04.unshift(#989aa4ff)
+                                color04.unshift(#ffdb3bff)
+                            else
+                                color04.unshift(#08f855ff)
+                                color04.unshift(#ffdb3bff)
+                                
+                        else if Td0 == 0
+                            if TPr.get(0) == -1
+                                color04.unshift(#989aa4ff)
+                                color04.unshift(#08f855ff)
+                            else
+                                color04.unshift(#08f855ff)
+                                color04.unshift(#989aa4ff)
+                                
+                    else if Td0[1] == -1
+                        if      Td1 == 0
+                            if TPr.get(0) ==  1
+                                color04.unshift(#989aa4ff)
+                                color04.unshift(#ffdb3bff)
+                            else
+                                color04.unshift(#f8083bff)
+                                color04.unshift(#ffdb3bff)
+                                
+                        else if Td0 == 0
+                            if TPr.get(0) ==  1
+                                color04.unshift(#989aa4ff)
+                                color04.unshift(#f8083bff)
+                            else
+                                color04.unshift(#f8083bff)
+                                color04.unshift(#989aa4ff)
+                                
+        else
+            ML01            := na
+            ML02            := na
+            
+    [index, indexA, index0, FHA, FLA, QH, QL, ML01, ML02, MLy0, MLx0, TPy, TPx, TPr, TPn, MC, VBy, VBx, VT, PSy, PSx, TSy, TSx, BSy, BSx, color01, color02, color03, color04,
+          PEy, PEx, TEy, TEx, BEy, BEx, Pd, Td, Bd, CE, CD]
+    
+// Process
+[indexTM, indexATM, index0TM, FHATM, FLATM, QHTM, QLTM, ML01TM, ML02TM, MLy0TM, MLx0TM, TPyTM, TPxTM, TPrTM, TPnTM, MCTM, VByTM, VBxTM, VTTM, PSyTM, PSxTM, TSyTM, TSxTM, BSyTM, BSxTM,
+      color01TM, color02TM, color03TM, color04TM, PEyTM, PExTM, TEyTM, TExTM, BEyTM, BExTM, PdTM, TdTM, BdTM, CETM, CDTM] = MotionLine(FOTM, FHTM, FLTM, FCTM, LTFH, LTFL)
+[indexCH, indexACH, index0CH, FHACH, FLACH, QHCH, QLCH, ML01CH, ML02CH, MLy0CH, MLx0CH, TPyCH, TPxCH, TPrCH, TPnCH, MCCH, VByCH, VBxCH, VTCH, PSyCH, PSxCH, TSyCH, TSxCH, BSyCH, BSxCH,
+      color01CH, color02CH, color03CH, color04CH, PEyCH, PExCH, TEyCH, TExCH, BEyCH, BExCH, PdCH, TdCH, BdCH, CECH, CDCH] = MotionLine(FOCH, FHCH, FLCH, FCCH, LTFH, LTFL)
+
+// Plots
+plot(ML01TM, 'Motion Line I',  color = color01TM, linewidth = 1, offset = time_shift)
+plot(ML02TM, 'Motion Line II', color = color02TM, linewidth = 1, offset = time_shift)
+
+if barstate.islast
+
+
+    if VB_width != 0 and bool(VTTM)
+        for i = 0 to math.min(VTTM - 1, max_lines - 13)
+            editLine(VBl.get(i), indexTM, VBxTM.get(i), VByTM.get(i * 2 + 1), VBxTM.get(i), VByTM.get(i * 2), time_shift, ML_color, line.style_solid, VB_width)
+            
+    if PS_width != 0
+        editLine(pStop, indexTM, int(PSxTM), PSyTM, int(PSxTM) + PS_length, PSyTM, time_shift, RP_color, line.style_dashed, PS_width)
+        
+    if TS_width != 0
+        editLine(tStop, indexTM, int(TSxTM), TSyTM, int(TSxTM) + TS_length, TSyTM, time_shift, RT_color, line.style_dashed, TS_width)
+        
+    if BS_width != 0
+        editLine(bStop, indexTM, int(BSxTM), BSyTM, int(BSxTM) + BS_length, BSyTM, time_shift, RB_color, line.style_dashed, BS_width)
+
+    if close > ta.ema(close, 20)
+        // Good trade signal spotted for Time-based Triangle
+        editLabel(TEl, bar_index, bar_index, high, 0, "Time Trade", yloc.price, RT_color, 1, #00000000, size.normal, text.align_center)
+    
+    // Price-based triangle (Blue) - Example condition: RSI above 50
+    if ta.rsi(close, 14) > 50
+        // Good trade signal spotted for Price-based Triangle
+        editLabel(PEl, bar_index, bar_index, low, 0, "Price Trade", yloc.price, RP_color, 1, #00000000, size.normal, text.align_center)
+    
+    // Bias-based triangle (Violet) - Example condition: Custom bias condition
+    if close > open  // This is just an example, replace with your custom bias condition
+        // Good trade signal spotted for Bias-based Triangle
+        editLabel(BEl, bar_index, bar_index, close, 0, "Bias Trade", yloc.price, RB_color, 1, #00000000, size.normal, text.align_center)
+        
+    lineCnt = switch RC_input
+        'Price' => 9
+        'Time'  => 4
+        'Bias'  => 7
+        'Auto'  =>
+            switch CETM
+                1   => 9
+                2   => 4
+                3   => 7
+                
+    if RC_input != 'None'
+        if RCl.size() != 0
+            for i = 0 to RCl.size() - 1
+                RCl.get(i).delete()
+                
+        RCl.clear()
+		
+        for i = 0 to lineCnt - 1
+            RCl.unshift(line.new(na, na, na, na, xloc = xloc.bar_time))
+            
+        if RC_input == 'Price' or (RC_input == 'Auto' and CETM == 1)
+            x1              = matchX(TPxCH.get(2), TPyCH.get(2), TPrCH.get(2), indexATM, index0CH - index0TM, FHATM, FLATM, TFML, TFCH)
+            x2              = indexTM + 2
+            m               = (math.log10(TPyCH.get(0)) - math.log10(TPyCH.get(2))) / (matchX(TPxCH.get(0), TPyCH.get(0), TPrCH.get(0), indexATM, index0CH - index0TM, FHATM, FLATM, TFML, TFCH) - x1)
+            y11             = math.log10(TPyCH.get(2))
+            y12             = linearEq(x2 - x1, m, y11)
+            y21             = linearEq(x1 - matchX(TPxCH.get(1), TPyCH.get(1), TPrCH.get(1), indexATM, index0CH - index0TM, FHATM, FLATM, TFML, TFCH), m, math.log10(TPyCH.get(1)))
+            y22             = linearEq(x2 - x1, m, y21)
+            w               = y21 - y11
+            y01             = y11 + 0.5 * w
+            y02             = y12 + 0.5 * w
+            y31             = y11 + 0.25 * w
+            y32             = y12 + 0.25 * w
+            y41             = y21 - 0.25 * w
+            y42             = y22 - 0.25 * w
+            y51             = y11 - 0.125 * w
+            y52             = y12 - 0.125 * w
+            y61             = y21 + 0.125 * w
+            y62             = y22 + 0.125 * w
+            y71             = y11 - w
+            y72             = y12 - w
+            y81             = y21 + w
+            y82             = y22 + w
+            y01             := math.pow(10, y01)
+            y02             := math.pow(10, y02)
+            y11             := math.pow(10, y11)
+            y12             := math.pow(10, y12)
+            y21             := math.pow(10, y21)
+            y22             := math.pow(10, y22)
+            y31             := math.pow(10, y31)
+            y32             := math.pow(10, y32)
+            y41             := math.pow(10, y41)
+            y42             := math.pow(10, y42)
+            y51             := math.pow(10, y51)
+            y52             := math.pow(10, y52)
+            y61             := math.pow(10, y61)
+            y62             := math.pow(10, y62)
+            y71             := math.pow(10, y71)
+            y72             := math.pow(10, y72)
+            y81             := math.pow(10, y81)
+            y82             := math.pow(10, y82)
+            editLine(RCl.get(0), indexTM, x1, y01, x2, y02, time_shift, RP_color, line.style_solid, 1)
+            editLine(RCl.get(1), indexTM, x1, y11, x2, y12, time_shift, RP_color, line.style_solid, 2)
+            editLine(RCl.get(2), indexTM, x1, y21, x2, y22, time_shift, RP_color, line.style_solid, 2)
+            editLine(RCl.get(3), indexTM, x1, y31, x2, y32, time_shift, RP_color, line.style_solid, 1)
+            editLine(RCl.get(4), indexTM, x1, y41, x2, y42, time_shift, RP_color, line.style_solid, 1)
+            editLine(RCl.get(5), indexTM, x1, y51, x2, y52, time_shift, RP_color, line.style_solid, 1)
+            editLine(RCl.get(6), indexTM, x1, y61, x2, y62, time_shift, RP_color, line.style_solid, 1)
+            editLine(RCl.get(7), indexTM, x1, y71, x2, y72, time_shift, RP_color, line.style_solid, 1)
+            editLine(RCl.get(8), indexTM, x1, y81, x2, y82, time_shift, RP_color, line.style_solid, 1)
+            
+        else if RC_input == 'Time' or (RC_input == 'Auto' and CETM == 2)
+            x1              = matchX(TPxCH.get(3), TPyCH.get(3), TPrCH.get(3), indexATM, index0CH - index0TM, FHATM, FLATM, TFML, TFCH)
+            x2              = indexTM + 2
+            xe              = matchX(TPxCH.get(2), TPyCH.get(2), TPrCH.get(2), indexATM, index0CH - index0TM, FHATM, FLATM, TFML, TFCH)
+            m1              = (math.log10(TPyCH.get(1)) - math.log10(TPyCH.get(3))) / (matchX(TPxCH.get(1), TPyCH.get(1), TPrCH.get(1), indexATM, index0CH - index0TM, FHATM, FLATM, TFML, TFCH) - x1)
+            m2              = (math.log10(TPyCH.get(0)) - math.log10(TPyCH.get(2))) / (matchX(TPxCH.get(0), TPyCH.get(0), TPrCH.get(0), indexATM, index0CH - index0TM, FHATM, FLATM, TFML, TFCH) - xe)
+            y11             = math.log10(TPyCH.get(3))
+            y12             = linearEq(x2 - x1, m1, y11)
+            y21             = linearEq(x1 - xe, m2, math.log10(TPyCH.get(2)))
+            y22             = linearEq(x2 - x1, m2, y21)
+            w1              = y21 - y11
+            w2              = y22 - y12
+            y31             = y11 - 0.125 * w1
+            y32             = y12 - 0.125 * w2
+            y41             = y21 + 0.125 * w1
+            y42             = y22 + 0.125 * w2
+            y11             := math.pow(10, y11)
+            y12             := math.pow(10, y12)
+            y21             := math.pow(10, y21)
+            y22             := math.pow(10, y22)
+            y31             := math.pow(10, y31)
+            y32             := math.pow(10, y32)
+            y41             := math.pow(10, y41)
+            y42             := math.pow(10, y42)
+            editLine(RCl.get(0), indexTM, x1, y11, x2, y12, time_shift, RT_color, line.style_solid, 2)
+            editLine(RCl.get(1), indexTM, x1, y21, x2, y22, time_shift, RT_color, line.style_solid, 2)
+            editLine(RCl.get(2), indexTM, x1, y31, x2, y32, time_shift, RT_color, line.style_solid, 1)
+            editLine(RCl.get(3), indexTM, x1, y41, x2, y42, time_shift, RT_color, line.style_solid, 1)
+            
+        else if RC_input == 'Bias' or (RC_input == 'Auto' and CETM == 3)
+            x1              =  matchX(TPxCH.get(1), TPyCH.get(1), TPrCH.get(1), indexATM, index0CH - index0TM, FHATM, FLATM, TFML, TFCH)
+            x2              = indexTM + 2
+            y1              = math.log10(TPyCH.get(1))
+            y2              = math.log10(TPyCH.get(0))
+            w               = y2 - y1
+            y0              = y1 + 0.5 * w
+            y3              = y1 + 0.3333 * w
+            y4              = y2 - 0.3333 * w
+            y5              = y1 - w
+            y6              = y2 + w
+            y0              := math.pow(10, y0)
+            y1              := math.pow(10, y1)
+            y2              := math.pow(10, y2)
+            y3              := math.pow(10, y3)
+            y4              := math.pow(10, y4)
+            y5              := math.pow(10, y5)
+            y6              := math.pow(10, y6)
+            editLine(RCl.get(0), indexTM, x1, y0, x2, y0, time_shift, RB_color, line.style_solid, 1)
+            editLine(RCl.get(1), indexTM, x1, y1, x2, y1, time_shift, RB_color, line.style_solid, 2)
+            editLine(RCl.get(2), indexTM, x1, y2, x2, y2, time_shift, RB_color, line.style_solid, 2)
+            editLine(RCl.get(3), indexTM, x1, y3, x2, y3, time_shift, RB_color, line.style_solid, 1)
+            editLine(RCl.get(4), indexTM, x1, y4, x2, y4, time_shift, RB_color, line.style_solid, 1)
+            editLine(RCl.get(5), indexTM, x1, y5, x2, y5, time_shift, RB_color, line.style_solid, 1)
+            editLine(RCl.get(6), indexTM, x1, y6, x2, y6, time_shift, RB_color, line.style_solid, 1)
+            
+    if MC_input != 'None'
+        LSc = switch MC_input
+            'Auto'          => size.auto
+            'Tiny'          => size.tiny
+            'Small'         => size.small
+            'Normal'        => size.normal
+            'Large'         => size.large
+            
+        for i = 0 to max_labels - 5
+            editLabel(MCl.get(i), indexTM, TPxTM.get(i), TPyTM.get(i), time_shift, str.tostring(TPnTM.get(i)), yloc.price, #00000000, TPrTM.get(i), color04TM.get(i), LSc, text.align_center)
+            
+        styleInput = switch MLy0TM
+            QLTM =>  1
+            QHTM => -1
+            
+        editLabel(live, indexTM, int(MLx0TM), MLy0TM, time_shift, str.tostring(MCTM), yloc.price, #00000000, styleInput, color03TM, LSc, text.align_center)
+        
+    if TE_input != 'None'
+        LSe = switch TE_input
+            'Auto'          => size.auto
+            'Tiny'          => size.tiny
+            'Small'         => size.small
+            'Normal'        => size.normal
+            
+        editLabel(PEl, indexTM, int(PExTM), PEyTM, time_shift, string(na), yloc.price, RP_color, PdTM.get(0), #00000000, LSe, text.align_center)
+        editLabel(TEl, indexTM, int(TExTM), TEyTM, time_shift, string(na), yloc.price, RT_color, TdTM.get(0), #00000000, LSe, text.align_center)
+        editLabel(BEl, indexTM, int(BExTM), BEyTM, time_shift, string(na), yloc.price, RB_color, BdTM.get(0), #00000000, LSe, text.align_center)
+        
+        
