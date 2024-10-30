@@ -1,0 +1,9 @@
+//@version=4
+
+
+//True Accumulation/Distribution uses True Range instead of last period's range in Marc Chaikin's Accumulation/Distribution indicator.
+study(title="True Accumulation/Distribution", shorttitle="True A/D", format=format.volume, precision=2)
+
+tad = cum(tr == 0 ? 0 : ((2 * close - min(low, close[1]) - max(high, close[1])) / (tr)) * volume)
+
+plot(tad, color=color.teal, title="True Accumulation/Distribution")
