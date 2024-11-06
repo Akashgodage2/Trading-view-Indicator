@@ -1,0 +1,16 @@
+//@version=4
+
+//...LMA..
+study("Logarithmic Moving Average", "LMA", overlay=true)
+
+len = input(14, title="Length", minval=1), src = input(close, title="Source")
+
+lma = 0.0, norm = 0.0, sum = 0.0
+
+for i = 0 to len - 1
+    weight = log(len + 1 - i)
+    norm := norm + weight
+    sum := sum + src[i] * weight
+lma := sum / norm
+
+plot(lma, title="LMA", color=color.aqua, linewidth=2)
