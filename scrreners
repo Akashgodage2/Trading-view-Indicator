@@ -1,0 +1,808 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// Multiple Indicator Screener for 40 FnO Contracts.  https://in.tradingview.com/u/QuantNomad/ Base code from 
+//QuantNomad's Open Source Screener with multiple indicator.
+// © cyroblazer
+//@version=5
+indicator('Multiple Screener with indicators(BB %B, RSI, ADX, Adapted RSI, TEMA, RSI Hidden/Regular[Cyro])', 
+             shorttitle='Multiple Stocks Screener[cyro]', 
+             overlay=true, max_bars_back=2000)
+
+string T1 = 'Check this if you are using dark theme for better color visibility'
+string T2 = 'Tiny font size recommended for mobile app or multiple layout'
+
+bool DarkMode   = input.bool(false, "Activate Dark Mode", T1, group="System", confirm=true)
+bool MobileMode = input.bool(false, "Enable Mobile Mode", T2, group="System", confirm=true)
+
+string i_s_Y = input.string('top',
+                             'Table Position',
+                             inline='1',
+                             options=['top', 'middle', 'bottom'],
+                             group="Table Styling")
+string i_s_X = input.string('right',
+                             '',
+                             inline='1',
+                             options=['left', 'center', 'right'],
+                             group="Table Styling")
+string i_s_font = input.string('small',
+                                 'Font size',
+                                 tooltip=T2,
+                                 options=['tiny', 'small', 'normal', 'large', 'huge'],
+                                 confirm=true,
+                                 group="Table Styling")
+
+color _DarkTblClr = input(color.rgb(11, 3, 3),
+                           "Dark Mode Table Color",
+                           inline="",
+                           group="Table Styling")
+color _DarkTxtClr = input(color.rgb(255, 255, 255),
+                           "Dark Mode Text Color",
+                           inline="",
+                           group="Table Styling")
+color _DarkBulClr = input(color.rgb(111, 215, 58),
+                           "Dark Mode Bull Color",
+                           inline="",
+                           group="Table Styling")
+color _DarkBerClr = input(color.rgb(237, 82, 82),
+                           "Dark Mode Bear Color",
+                           inline="",
+                           group="Table Styling")
+
+color _LightTblClr = input(color.rgb(11, 3, 3),
+                             "Light Mode Table Color",
+                             inline="-",
+                             group="Table Styling")
+color _LightTxtClr = input(color.rgb(255, 255, 255),
+                             "Light Mode Text Color",
+                             inline="-",
+                             group="Table Styling")
+color _LightBulClr = input(color.rgb(35, 132, 30),
+                             "Light Mode Bull Color",
+                             inline="-",
+                             group="Table Styling")
+color _LightBerClr = input(color.rgb(225, 72, 72),
+                             " Mode Bear Color",
+                             inline="-",
+                             group="Table Styling")
+
+color _colTable   = DarkMode ? _DarkTblClr : _LightTblClr
+color _colText    = DarkMode ? _DarkTxtClr : _LightTxtClr
+color bullish_col = DarkMode ? _DarkBulClr : _LightBulClr
+color bearish_col = DarkMode ? _DarkBerClr : _LightBerClr
+
+//Adapted RSI
+int _adaLen   = input.int(defval=14, title='Adaptive RSI Length',       group="Adaptive RSI")
+float _adaSrc = input.source(defval=close, title="Adaptive RSI Source", group="Adaptive RSI")
+
+// RSI Hidden and Regular Bullish Signal
+//int lbR = input.int(title="Pivot Lookback Right", defval=5,               group = " ")
+//int lbL = input.int(title="Pivot Lookback Left", defval=5,                group = " ")
+//int rangeUpper   = input.int(title="Max of Lookback Range", defval=60,    group = " ")
+//int rangeLower   = input.int(title="Min of Lookback Range", defval=5,     group = " ")
+int _rsiLen      = input.int(14, title   = "RSI Length",                  group = " ")
+int _obLevel     = input.int(70, title   = "RSI Overbought",              group = " ")
+int _osLevel     = input.int(30, title   = "RSI Oversold",                group = " ")
+//bool plotHidden  = input.bool(true,title = 'Plot Hidden',                 group = " ")
+
+//Bollinger Band %B
+int  _bbLength   = input.int(defval = 20, title = "Bollinger Band Period", minval=1, group = "BB % B")
+float _bbSrc     = input.source(defval = close,            title="Source",           group = "BB % B")
+float _bbMult    = input.float(defval = 2.00, title="Stdev", minval=0.001, maxval=50,group = 'BB % B')
+
+// ADX Params
+int adx_smooth   = input.int(14, title = "ADX Smoothing",     group = 'ADX')
+int adx_dilen    = input.int(14, title = "ADX DI Length",     group = 'ADX')
+int adx_level    = input.int(40, title = "ADX Level",         group = 'ADX')
+
+//EMA
+int _Base  = input.int(6,  title = "Base Smoothing",                group = "TEMA")
+int _Sline = input.int(10, title = "Slow EMA Line",                 group = "TEMA")
+int _Lline = input.int(14, title = "Fast EMA Line",                 group = "TEMA")
+
+////////////////////////////////////////////////////////////////////////////
+/////////////
+// SYMBOLS // 
+
+u01 = input.bool(true,  title = "", group = 'Symbols', inline = 's01')
+u02 = input.bool(true,  title = "", group = 'Symbols', inline = 's02')
+u03 = input.bool(true,  title = "", group = 'Symbols', inline = 's03')
+u04 = input.bool(true,  title = "", group = 'Symbols', inline = 's04')
+u05 = input.bool(true,  title = "", group = 'Symbols', inline = 's05')
+u06 = input.bool(true,  title = "", group = 'Symbols', inline = 's06')
+u07 = input.bool(true,  title = "", group = 'Symbols', inline = 's07')
+u08 = input.bool(true,  title = "", group = 'Symbols', inline = 's08')
+u09 = input.bool(true,  title = "", group = 'Symbols', inline = 's09')
+u10 = input.bool(true,  title = "", group = 'Symbols', inline = 's10')
+u11 = input.bool(true,  title = "", group = 'Symbols', inline = 's11')
+u12 = input.bool(true,  title = "", group = 'Symbols', inline = 's12')
+u13 = input.bool(true,  title = "", group = 'Symbols', inline = 's13')
+u14 = input.bool(true,  title = "", group = 'Symbols', inline = 's14')
+u15 = input.bool(true,  title = "", group = 'Symbols', inline = 's15')
+u16 = input.bool(true,  title = "", group = 'Symbols', inline = 's16')
+u17 = input.bool(true,  title = "", group = 'Symbols', inline = 's17')
+u18 = input.bool(true,  title = "", group = 'Symbols', inline = 's18')
+u19 = input.bool(true,  title = "", group = 'Symbols', inline = 's19')
+u20 = input.bool(true,  title = "", group = 'Symbols', inline = 's20')
+u21 = input.bool(true,  title = "", group = 'Symbols', inline = 's21')
+u22 = input.bool(true,  title = "", group = 'Symbols', inline = 's22')
+u23 = input.bool(true,  title = "", group = 'Symbols', inline = 's23')
+u24 = input.bool(true,  title = "", group = 'Symbols', inline = 's24')
+u25 = input.bool(true,  title = "", group = 'Symbols', inline = 's25')
+u26 = input.bool(true,  title = "", group = 'Symbols', inline = 's26')
+u27 = input.bool(true,  title = "", group = 'Symbols', inline = 's27')
+u28 = input.bool(true,  title = "", group = 'Symbols', inline = 's28')
+u29 = input.bool(true,  title = "", group = 'Symbols', inline = 's29')
+u30 = input.bool(true,  title = "", group = 'Symbols', inline = 's30')
+u31 = input.bool(true,  title = "", group = 'Symbols', inline = 's31')
+u32 = input.bool(true,  title = "", group = 'Symbols', inline = 's32')
+u33 = input.bool(true,  title = "", group = 'Symbols', inline = 's33')
+u34 = input.bool(true,  title = "", group = 'Symbols', inline = 's34')
+u35 = input.bool(false, title = "", group = 'Symbols', inline = 's35')
+u36 = input.bool(false, title = "", group = 'Symbols', inline = 's36')
+u37 = input.bool(false, title = "", group = 'Symbols', inline = 's37')
+u38 = input.bool(false, title = "", group = 'Symbols', inline = 's38')
+u39 = input.bool(false, title = "", group = 'Symbols', inline = 's39')
+u40 = input.bool(false, title = "", group = 'Symbols', inline = 's40')
+
+s01 = input.symbol('TATACONSUM',  group = 'Symbols', inline = 's01')
+s02 = input.symbol('NIFTY',       group = 'Symbols', inline = 's02')
+s03 = input.symbol('BANKNIFTY',   group = 'Symbols', inline = 's03')
+s04 = input.symbol('TVSMOTOR',    group = 'Symbols', inline = 's04')
+s05 = input.symbol('AXISBANK',    group = 'Symbols', inline = 's05')
+s06 = input.symbol('TCS',         group = 'Symbols', inline = 's06')
+s07 = input.symbol('JINDALSTEL',  group = 'Symbols', inline = 's07')
+s08 = input.symbol('TATAMOTORs',  group = 'Symbols', inline = 's08')
+s09 = input.symbol('ADANIPORTS',  group = 'Symbols', inline = 's09')
+s10 = input.symbol('ACC',         group = 'Symbols', inline = 's10')
+s11 = input.symbol('SRF',         group = 'Symbols', inline = 's11')
+s12 = input.symbol('M_M',         group = 'Symbols', inline = 's12')
+s13 = input.symbol('ITC',         group = 'Symbols', inline = 's13')
+s14 = input.symbol('LUPIN',       group = 'Symbols', inline = 's14')
+s15 = input.symbol('AUROPHARMA',  group = 'Symbols', inline = 's15')
+s16 = input.symbol('HINDALCO',    group = 'Symbols', inline = 's16')
+s17 = input.symbol('TATASTEEL',   group = 'Symbols', inline = 's17')
+s18 = input.symbol('RELIANCE',    group = 'Symbols', inline = 's18')
+s19 = input.symbol('NTPC',        group = 'Symbols', inline = 's19')
+s20 = input.symbol('HAVELLS',     group = 'Symbols', inline = 's20')
+s21 = input.symbol('IPCALAB',     group = 'Symbols', inline = 's21')
+s22 = input.symbol('EICHERMOT',   group = 'Symbols', inline = 's22')
+s23 = input.symbol('AMBUJACEM',   group = 'Symbols', inline = 's23')
+s24 = input.symbol('NMDC',        group = 'Symbols', inline = 's24')
+s25 = input.symbol('ABFRL',       group = 'Symbols', inline = 's25')
+s26 = input.symbol('MANAPPURAM',  group = 'Symbols', inline = 's26')
+s27 = input.symbol('APOLLOTYRE',  group = 'Symbols', inline = 's27')
+s28 = input.symbol('ADANIENT',    group = 'Symbols', inline = 's28')
+s29 = input.symbol('BAJFINANCE',  group = 'Symbols', inline = 's29')
+s30 = input.symbol('INFY',        group = 'Symbols', inline = 's30')
+s31 = input.symbol('ASHOKLEY',    group = 'Symbols', inline = 's31')
+s32 = input.symbol('CANBK',       group = 'Symbols', inline = 's32')
+s33 = input.symbol('UPL',         group = 'Symbols', inline = 's33')
+s34 = input.symbol('SIEMENS',     group = 'Symbols', inline = 's34')
+s35 = input.symbol('PFC',         group = 'Symbols', inline = 's35')
+s36 = input.symbol('HCLTECH',     group = 'Symbols', inline = 's36')
+s37 = input.symbol('CIPLA',       group = 'Symbols', inline = 's37')
+s38 = input.symbol('TATACOMM',    group = 'Symbols', inline = 's38')
+s39 = input.symbol('MCX',         group = 'Symbols', inline = 's39')
+s40 = input.symbol('APOLLOHOSP',  group = 'Symbols', inline = 's40')
+
+//////////////////
+// CALCULATIONS //
+
+// Get only symbol
+only_symbol(s) => 
+    array.get(str.split(s, ":"), 1)
+
+//Uncomment this code for hidden Rsi 
+
+// Checking if Condition is true for how many bars
+//_inRange(bool cond) =>
+//    bars = ta.barssince(cond == true)
+//    rangeLower <= bars and bars <= rangeUpper
+
+// RSI function for normal and adapted RSI
+rsi_func(int _rsiLen,float _adaSrc,simple int _adaLen) =>
+    float rsi = ta.rsi(_adaSrc,_adaLen) 
+    alpharsi = 2 * math.abs(ta.rsi(_adaSrc, _adaLen) / 100 - 0.5)
+
+    float _arsi    = 0.0
+    _arsi   := math.round(alpharsi * _adaSrc + (1 - alpharsi) * nz(_arsi[1]),2)
+
+    [rsi,_arsi] 
+
+
+ // ADX Function
+
+dirmov(simple int len) =>
+	up   =  ta.change(high)
+	down = -ta.change(low)
+	
+	plusDM  = na(up)   ? na : (up > down and up > 0   ? up   : 0)
+	minusDM = na(down) ? na : (down > up and down > 0 ? down : 0)
+	
+	truerange = ta.rma(ta.tr, len)
+	
+	plus  = fixnan(100 * ta.rma(plusDM, len)  / truerange)
+	minus = fixnan(100 * ta.rma(minusDM, len) / truerange)
+	
+	[plus, minus]
+	
+adx_func(simple int dilen, simple int adxlen) =>
+	[plus, minus] = dirmov(dilen)
+	sum = plus + minus
+	float adx = math.round(100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), adxlen),2)          
+
+// Function for Bollinger Bands %B
+bb_func(float _bbSrc,simple int len) =>
+    basis = ta.sma(_bbSrc,_bbLength)
+    dev =   _bbMult * ta.stdev(_bbSrc, _bbLength)
+    lower = basis - dev
+    upper = basis + dev
+    float bbr   = math.round((_bbSrc - lower)/ (upper-lower), 2)
+
+// Smooth TEMA function calculating cross over and under 
+tema_func(Smooth, ShortLine, LongLine) =>
+    
+
+    Aema1  = ta.ema(close, Smooth)
+    Aema2  = ta.ema(Aema1, Smooth)
+    Aema3  = ta.ema(Aema2, Smooth)
+    Atema1 = 3 *(Aema1 - Aema2) + Aema3
+
+    Bema1  = ta.ema(close, Smooth)
+    Bema2  = ta.ema(Aema1, Smooth)
+    Bema3  = ta.ema(Aema2, Smooth)
+    Btema1 = 3 *(Aema1 - Aema2) + Aema3
+
+
+    short =  ta.ema(Atema1, ShortLine)
+    long  =  ta.ema(Btema1,  LongLine)
+    [short, long]
+
+// Main Screener function
+screener_func() =>
+    [temp_rsi, arsi] = rsi_func(_rsiLen,_adaSrc,_adaLen)
+    
+    adx = adx_func(adx_dilen, adx_smooth)
+
+    bbr = bb_func(close, _bbLength)
+
+    [short,long] = tema_func(_Base, _Sline, _Lline)
+    _bullTema = ta.crossover(short,long)
+    _bearTema = ta.crossunder(short,long)
+    ematema = short > long ? "Up": long > short ? "Down"  : _bullTema ? "Long" : _bearTema ? "Short" : 'Wait for Signal'
+
+
+    // RSI Divergence
+    //plFound = na(ta.pivotlow(temp_rsi, lbL, lbR))  ? false : true
+    //phFound = na(ta.pivothigh(temp_rsi, lbL, lbR)) ? false : true
+    // Regular Bullish
+    //rsiHL   = temp_rsi[lbR]   > ta.valuewhen(plFound, temp_rsi[lbR], 1) and _inRange(plFound[1])
+    //priceLL = low[lbR]        < ta.valuewhen(plFound, low[lbR], 1)
+    // Hidden Bullish
+    //rsiLL          = temp_rsi[lbR]   < ta.valuewhen(plFound, temp_rsi[lbR], 1) and _inRange(plFound[1])
+    //priceHL        = low[lbR]        > ta.valuewhen(plFound, low[lbR], 1)
+    //_bull          = (plotHidden and priceHL and rsiLL and plFound) ? 'Hidden Long Sig' :  
+                     //(priceLL and rsiHL and plFound) ? 'Regular Long Sig' : 'Wait for Trade'
+    // Regular Bearish
+    //rsiLH   = temp_rsi[lbR]  < ta.valuewhen(phFound, temp_rsi[lbR], 1) and _inRange(phFound[1])
+    //priceHH = high[lbR]      > ta.valuewhen(phFound, high[lbR], 1)
+    // Hidden Bearish
+    //rsiHH   = temp_rsi[lbR] > ta.valuewhen(phFound, temp_rsi[lbR], 1) and _inRange(phFound[1])
+    //priceLH = high[lbR]     < ta.valuewhen(phFound, high[lbR], 1)
+    //_bear   = (plotHidden and priceLH and rsiHH and phFound) ? 'Hidden Short Sig' : (priceHH and rsiLH and phFound) ? 
+              //'Regular Short Sig' : 'Wait for Trade'
+    //_div    = (plotHidden and priceHL and rsiLL and plFound) ? 'Hidden Long Sig' : 
+              //(priceLL and rsiHL and plFound) ? 'Regular Long Sig' : (plotHidden and priceLH and rsiHH and phFound) ? 'Hidden Short Sig' : (priceHH and rsiLH and phFound) ? 
+              //'Regular Short Sig' : 'Wait for Trade'
+            
+//    [close, temp_rsi, high, adx, _div, bbr, ematema, arsi]
+    [close, temp_rsi, high, adx, bbr, ematema, arsi]
+// Security call
+[cl01, rsi01, High01, adx01, bbr01, ematema01, _adaSig01] = request.security(s01, timeframe.period, screener_func())
+[cl02, rsi02, High02, adx02, bbr02, ematema02, _adaSig02] = request.security(s02, timeframe.period, screener_func())
+[cl03, rsi03, High03, adx03, bbr03, ematema03, _adaSig03] = request.security(s03, timeframe.period, screener_func())
+[cl04, rsi04, High04, adx04, bbr04, ematema04, _adaSig04] = request.security(s04, timeframe.period, screener_func())
+[cl05, rsi05, High05, adx05, bbr05, ematema05, _adaSig05] = request.security(s05, timeframe.period, screener_func())
+[cl06, rsi06, High06, adx06, bbr06, ematema06, _adaSig06] = request.security(s06, timeframe.period, screener_func())
+[cl07, rsi07, High07, adx07, bbr07, ematema07, _adaSig07] = request.security(s07, timeframe.period, screener_func())
+[cl08, rsi08, High08, adx08, bbr08, ematema08, _adaSig08] = request.security(s08, timeframe.period, screener_func())
+[cl09, rsi09, High09, adx09, bbr09, ematema09, _adaSig09] = request.security(s09, timeframe.period, screener_func())
+[cl10, rsi10, High10, adx10, bbr10, ematema10, _adaSig10] = request.security(s10, timeframe.period, screener_func())
+[cl11, rsi11, High11, adx11, bbr11, ematema11, _adaSig11] = request.security(s11, timeframe.period, screener_func())
+[cl12, rsi12, High12, adx12, bbr12, ematema12, _adaSig12] = request.security(s12, timeframe.period, screener_func())
+[cl13, rsi13, High13, adx13, bbr13, ematema13, _adaSig13] = request.security(s13, timeframe.period, screener_func())
+[cl14, rsi14, High14, adx14, bbr14, ematema14, _adaSig14] = request.security(s14, timeframe.period, screener_func())
+[cl15, rsi15, High15, adx15, bbr15, ematema15, _adaSig15] = request.security(s15, timeframe.period, screener_func())
+[cl16, rsi16, High16, adx16, bbr16, ematema16, _adaSig16] = request.security(s16, timeframe.period, screener_func())
+[cl17, rsi17, High17, adx17, bbr17, ematema17, _adaSig17] = request.security(s17, timeframe.period, screener_func())
+[cl18, rsi18, High18, adx18, bbr18, ematema18, _adaSig18] = request.security(s18, timeframe.period, screener_func())
+[cl19, rsi19, High19, adx19, bbr19, ematema19, _adaSig19] = request.security(s19, timeframe.period, screener_func())
+[cl20, rsi20, High20, adx20, bbr20, ematema20, _adaSig20] = request.security(s20, timeframe.period, screener_func())
+[cl21, rsi21, High21, adx21, bbr21, ematema21, _adaSig21] = request.security(s21, timeframe.period, screener_func())
+[cl22, rsi22, High22, adx22, bbr22, ematema22, _adaSig22] = request.security(s22, timeframe.period, screener_func())
+[cl23, rsi23, High23, adx23, bbr23, ematema23, _adaSig23] = request.security(s23, timeframe.period, screener_func())
+[cl24, rsi24, High24, adx24, bbr24, ematema24, _adaSig24] = request.security(s24, timeframe.period, screener_func())
+[cl25, rsi25, High25, adx25, bbr25, ematema25, _adaSig25] = request.security(s25, timeframe.period, screener_func())
+[cl26, rsi26, High26, adx26, bbr26, ematema26, _adaSig26] = request.security(s26, timeframe.period, screener_func())
+[cl27, rsi27, High27, adx27, bbr27, ematema27, _adaSig27] = request.security(s27, timeframe.period, screener_func())
+[cl28, rsi28, High28, adx28, bbr28, ematema28, _adaSig28] = request.security(s28, timeframe.period, screener_func())
+[cl29, rsi29, High29, adx29, bbr29, ematema29, _adaSig29] = request.security(s29, timeframe.period, screener_func())
+[cl30, rsi30, High30, adx30, bbr30, ematema30, _adaSig30] = request.security(s30, timeframe.period, screener_func())
+[cl31, rsi31, High31, adx31, bbr31, ematema31, _adaSig31] = request.security(s31, timeframe.period, screener_func())
+[cl32, rsi32, High32, adx32, bbr32, ematema32, _adaSig32] = request.security(s32, timeframe.period, screener_func())
+[cl33, rsi33, High33, adx33, bbr33, ematema33, _adaSig33] = request.security(s33, timeframe.period, screener_func())
+[cl34, rsi34, High34, adx34, bbr34, ematema34, _adaSig34] = request.security(s34, timeframe.period, screener_func())
+[cl35, rsi35, High35, adx35, bbr35, ematema35, _adaSig35] = request.security(s35, timeframe.period, screener_func())
+[cl36, rsi36, High36, adx36, bbr36, ematema36, _adaSig36] = request.security(s36, timeframe.period, screener_func())
+[cl37, rsi37, High37, adx37, bbr37, ematema37, _adaSig37] = request.security(s37, timeframe.period, screener_func())
+[cl38, rsi38, High38, adx38, bbr38, ematema38, _adaSig38] = request.security(s38, timeframe.period, screener_func())
+[cl39, rsi39, High39, adx39, bbr39, ematema39, _adaSig39] = request.security(s39, timeframe.period, screener_func())
+[cl40, rsi40, High40, adx40, bbr40, ematema40, _adaSig40] = request.security(s40, timeframe.period, screener_func())
+
+////////////
+// ARRAYS //
+u_arr        =   array.new_bool(0)
+s_arr        = array.new_string(0)
+cl_arr       =  array.new_float(0)
+rsi_arr      =  array.new_float(0)
+high_arr     =  array.new_float(0)
+adx_arr      =  array.new_float(0)
+//_div_arr     = array.new_string(0)
+bbr_arr      =  array.new_float(0)
+ematema_arr  = array.new_string(0)
+_adaRSI_arr  =  array.new_float(0)
+
+
+
+
+// Add Symbols 
+array.push(s_arr, only_symbol(s01))
+array.push(s_arr, only_symbol(s02))
+array.push(s_arr, only_symbol(s03))
+array.push(s_arr, only_symbol(s04))
+array.push(s_arr, only_symbol(s05))
+array.push(s_arr, only_symbol(s06))
+array.push(s_arr, only_symbol(s07))
+array.push(s_arr, only_symbol(s08))
+array.push(s_arr, only_symbol(s09))
+array.push(s_arr, only_symbol(s10))
+array.push(s_arr, only_symbol(s11))
+array.push(s_arr, only_symbol(s12))
+array.push(s_arr, only_symbol(s13))
+array.push(s_arr, only_symbol(s14))
+array.push(s_arr, only_symbol(s15))
+array.push(s_arr, only_symbol(s16))
+array.push(s_arr, only_symbol(s17))
+array.push(s_arr, only_symbol(s18))
+array.push(s_arr, only_symbol(s19))
+array.push(s_arr, only_symbol(s20))
+array.push(s_arr, only_symbol(s21))
+array.push(s_arr, only_symbol(s22))
+array.push(s_arr, only_symbol(s23))
+array.push(s_arr, only_symbol(s24))
+array.push(s_arr, only_symbol(s25))
+array.push(s_arr, only_symbol(s26))
+array.push(s_arr, only_symbol(s27))
+array.push(s_arr, only_symbol(s28))
+array.push(s_arr, only_symbol(s29))
+array.push(s_arr, only_symbol(s30))
+array.push(s_arr, only_symbol(s31))
+array.push(s_arr, only_symbol(s32))
+array.push(s_arr, only_symbol(s33))
+array.push(s_arr, only_symbol(s34))
+array.push(s_arr, only_symbol(s35))
+array.push(s_arr, only_symbol(s36))
+array.push(s_arr, only_symbol(s37))
+array.push(s_arr, only_symbol(s38))
+array.push(s_arr, only_symbol(s39))
+array.push(s_arr, only_symbol(s40))
+
+///////////
+// FLAGS //
+
+array.push(u_arr, u01)
+array.push(u_arr, u02)
+array.push(u_arr, u03)
+array.push(u_arr, u04)
+array.push(u_arr, u05)
+array.push(u_arr, u06)
+array.push(u_arr, u07)
+array.push(u_arr, u08)
+array.push(u_arr, u09)
+array.push(u_arr, u10)
+array.push(u_arr, u11)
+array.push(u_arr, u12)
+array.push(u_arr, u13)
+array.push(u_arr, u14)
+array.push(u_arr, u15)
+array.push(u_arr, u16)
+array.push(u_arr, u17)
+array.push(u_arr, u18)
+array.push(u_arr, u19)
+array.push(u_arr, u20)
+array.push(u_arr, u21)
+array.push(u_arr, u22)
+array.push(u_arr, u23)
+array.push(u_arr, u24)
+array.push(u_arr, u25)
+array.push(u_arr, u26)
+array.push(u_arr, u27)
+array.push(u_arr, u28)
+array.push(u_arr, u29)
+array.push(u_arr, u30)
+array.push(u_arr, u31)
+array.push(u_arr, u32)
+array.push(u_arr, u33)
+array.push(u_arr, u34)
+array.push(u_arr, u35)
+array.push(u_arr, u36)
+array.push(u_arr, u37)
+array.push(u_arr, u38)
+array.push(u_arr, u39)
+array.push(u_arr, u40)
+
+///////// //
+// BB %B
+
+array.push(bbr_arr, bbr01)
+array.push(bbr_arr, bbr02)
+array.push(bbr_arr, bbr03)
+array.push(bbr_arr, bbr04)
+array.push(bbr_arr, bbr05)
+array.push(bbr_arr, bbr06)
+array.push(bbr_arr, bbr07)
+array.push(bbr_arr, bbr08)
+array.push(bbr_arr, bbr09)
+array.push(bbr_arr, bbr10)
+array.push(bbr_arr, bbr11)
+array.push(bbr_arr, bbr12)
+array.push(bbr_arr, bbr13)
+array.push(bbr_arr, bbr14)
+array.push(bbr_arr, bbr15)
+array.push(bbr_arr, bbr16)
+array.push(bbr_arr, bbr17)
+array.push(bbr_arr, bbr18)
+array.push(bbr_arr, bbr19)
+array.push(bbr_arr, bbr20)
+array.push(bbr_arr, bbr21)
+array.push(bbr_arr, bbr22)
+array.push(bbr_arr, bbr23)
+array.push(bbr_arr, bbr24)
+array.push(bbr_arr, bbr25)
+array.push(bbr_arr, bbr26)
+array.push(bbr_arr, bbr27)
+array.push(bbr_arr, bbr28)
+array.push(bbr_arr, bbr29)
+array.push(bbr_arr, bbr30)
+array.push(bbr_arr, bbr31)
+array.push(bbr_arr, bbr32)
+array.push(bbr_arr, bbr33)
+array.push(bbr_arr, bbr34)
+array.push(bbr_arr, bbr35)
+array.push(bbr_arr, bbr36)
+array.push(bbr_arr, bbr37)
+array.push(bbr_arr, bbr38)
+array.push(bbr_arr, bbr39)
+array.push(bbr_arr, bbr40)
+
+///////////
+// CLOSE //
+
+array.push(cl_arr, cl01)
+array.push(cl_arr, cl02)
+array.push(cl_arr, cl03)
+array.push(cl_arr, cl04)
+array.push(cl_arr, cl05)
+array.push(cl_arr, cl06)
+array.push(cl_arr, cl07)
+array.push(cl_arr, cl08)
+array.push(cl_arr, cl09)
+array.push(cl_arr, cl10)
+array.push(cl_arr, cl11)
+array.push(cl_arr, cl12)
+array.push(cl_arr, cl13)
+array.push(cl_arr, cl14)
+array.push(cl_arr, cl15)
+array.push(cl_arr, cl16)
+array.push(cl_arr, cl17)
+array.push(cl_arr, cl18)
+array.push(cl_arr, cl19)
+array.push(cl_arr, cl20)
+array.push(cl_arr, cl21)
+array.push(cl_arr, cl22)
+array.push(cl_arr, cl23)
+array.push(cl_arr, cl24)
+array.push(cl_arr, cl25)
+array.push(cl_arr, cl26)
+array.push(cl_arr, cl27)
+array.push(cl_arr, cl28)
+array.push(cl_arr, cl29)
+array.push(cl_arr, cl30)
+array.push(cl_arr, cl31)
+array.push(cl_arr, cl32)
+array.push(cl_arr, cl33)
+array.push(cl_arr, cl34)
+array.push(cl_arr, cl35)
+array.push(cl_arr, cl36)
+array.push(cl_arr, cl37)
+array.push(cl_arr, cl38)
+array.push(cl_arr, cl39)
+array.push(cl_arr, cl40)
+
+/////////
+// RSI //
+
+array.push(rsi_arr, rsi01)
+array.push(rsi_arr, rsi02)
+array.push(rsi_arr, rsi03)
+array.push(rsi_arr, rsi04)
+array.push(rsi_arr, rsi05)
+array.push(rsi_arr, rsi06)
+array.push(rsi_arr, rsi07)
+array.push(rsi_arr, rsi08)
+array.push(rsi_arr, rsi09)
+array.push(rsi_arr, rsi10)
+array.push(rsi_arr, rsi11)
+array.push(rsi_arr, rsi12)
+array.push(rsi_arr, rsi13)
+array.push(rsi_arr, rsi14)
+array.push(rsi_arr, rsi15)
+array.push(rsi_arr, rsi16)
+array.push(rsi_arr, rsi17)
+array.push(rsi_arr, rsi18)
+array.push(rsi_arr, rsi19)
+array.push(rsi_arr, rsi20)
+array.push(rsi_arr, rsi21)
+array.push(rsi_arr, rsi22)
+array.push(rsi_arr, rsi23)
+array.push(rsi_arr, rsi24)
+array.push(rsi_arr, rsi25)
+array.push(rsi_arr, rsi26)
+array.push(rsi_arr, rsi27)
+array.push(rsi_arr, rsi28)
+array.push(rsi_arr, rsi29)
+array.push(rsi_arr, rsi30)
+array.push(rsi_arr, rsi31)
+array.push(rsi_arr, rsi32)
+array.push(rsi_arr, rsi33)
+array.push(rsi_arr, rsi34)
+array.push(rsi_arr, rsi35)
+array.push(rsi_arr, rsi36)
+array.push(rsi_arr, rsi37)
+array.push(rsi_arr, rsi38)
+array.push(rsi_arr, rsi39)
+array.push(rsi_arr, rsi40)
+
+/////////
+// High
+
+array.push(high_arr, High01)
+array.push(high_arr, High02)
+array.push(high_arr, High03)
+array.push(high_arr, High04)
+array.push(high_arr, High05)
+array.push(high_arr, High06)
+array.push(high_arr, High07)
+array.push(high_arr, High08)
+array.push(high_arr, High09)
+array.push(high_arr, High10)
+array.push(high_arr, High11)
+array.push(high_arr, High12)
+array.push(high_arr, High13)
+array.push(high_arr, High14)
+array.push(high_arr, High15)
+array.push(high_arr, High16)
+array.push(high_arr, High17)
+array.push(high_arr, High18)
+array.push(high_arr, High19)
+array.push(high_arr, High20)
+array.push(high_arr, High21)
+array.push(high_arr, High22)
+array.push(high_arr, High23)
+array.push(high_arr, High24)
+array.push(high_arr, High25)
+array.push(high_arr, High26)
+array.push(high_arr, High27)
+array.push(high_arr, High28)
+array.push(high_arr, High29)
+array.push(high_arr, High30)
+array.push(high_arr, High31)
+array.push(high_arr, High32)
+array.push(high_arr, High33)
+array.push(high_arr, High34)
+array.push(high_arr, High35)
+array.push(high_arr, High36)
+array.push(high_arr, High37)
+array.push(high_arr, High38)
+array.push(high_arr, High39)
+array.push(high_arr, High40)
+
+////////
+//adx
+array.push(adx_arr, adx01)
+array.push(adx_arr, adx02)
+array.push(adx_arr, adx03)
+array.push(adx_arr, adx04)
+array.push(adx_arr, adx05)
+array.push(adx_arr, adx06)
+array.push(adx_arr, adx07)
+array.push(adx_arr, adx08)
+array.push(adx_arr, adx09)
+array.push(adx_arr, adx10)
+array.push(adx_arr, adx11)
+array.push(adx_arr, adx12)
+array.push(adx_arr, adx13)
+array.push(adx_arr, adx14)
+array.push(adx_arr, adx15)
+array.push(adx_arr, adx16)
+array.push(adx_arr, adx17)
+array.push(adx_arr, adx18)
+array.push(adx_arr, adx19)
+array.push(adx_arr, adx20)
+array.push(adx_arr, adx21)
+array.push(adx_arr, adx22)
+array.push(adx_arr, adx23)
+array.push(adx_arr, adx24)
+array.push(adx_arr, adx25)
+array.push(adx_arr, adx26)
+array.push(adx_arr, adx27)
+array.push(adx_arr, adx28)
+array.push(adx_arr, adx29)
+array.push(adx_arr, adx30)
+array.push(adx_arr, adx31)
+array.push(adx_arr, adx32)
+array.push(adx_arr, adx33)
+array.push(adx_arr, adx34)
+array.push(adx_arr, adx35)
+array.push(adx_arr, adx36)
+array.push(adx_arr, adx37)
+array.push(adx_arr, adx38)
+array.push(adx_arr, adx39)
+array.push(adx_arr, adx40)
+
+/////////
+// ematema //
+
+array.push(ematema_arr, ematema01)
+array.push(ematema_arr, ematema02)
+array.push(ematema_arr, ematema03)
+array.push(ematema_arr, ematema04)
+array.push(ematema_arr, ematema05)
+array.push(ematema_arr, ematema06)
+array.push(ematema_arr, ematema07)
+array.push(ematema_arr, ematema08)
+array.push(ematema_arr, ematema09)
+array.push(ematema_arr, ematema10)
+array.push(ematema_arr, ematema11)
+array.push(ematema_arr, ematema12)
+array.push(ematema_arr, ematema13)
+array.push(ematema_arr, ematema14)
+array.push(ematema_arr, ematema15)
+array.push(ematema_arr, ematema16)
+array.push(ematema_arr, ematema17)
+array.push(ematema_arr, ematema18)
+array.push(ematema_arr, ematema19)
+array.push(ematema_arr, ematema20)
+array.push(ematema_arr, ematema21)
+array.push(ematema_arr, ematema22)
+array.push(ematema_arr, ematema23)
+array.push(ematema_arr, ematema24)
+array.push(ematema_arr, ematema25)
+array.push(ematema_arr, ematema26)
+array.push(ematema_arr, ematema27)
+array.push(ematema_arr, ematema28)
+array.push(ematema_arr, ematema29)
+array.push(ematema_arr, ematema30)
+array.push(ematema_arr, ematema31)
+array.push(ematema_arr, ematema32)
+array.push(ematema_arr, ematema33)
+array.push(ematema_arr, ematema34)
+array.push(ematema_arr, ematema35)
+array.push(ematema_arr, ematema36)
+array.push(ematema_arr, ematema37)
+array.push(ematema_arr, ematema38)
+array.push(ematema_arr, ematema39)
+array.push(ematema_arr, ematema40)
+
+////////////////
+
+
+array.push(_adaRSI_arr, _adaSig01)
+array.push(_adaRSI_arr, _adaSig02)
+array.push(_adaRSI_arr, _adaSig03)
+array.push(_adaRSI_arr, _adaSig04)
+array.push(_adaRSI_arr, _adaSig05)
+array.push(_adaRSI_arr, _adaSig06)
+array.push(_adaRSI_arr, _adaSig07)
+array.push(_adaRSI_arr, _adaSig08)
+array.push(_adaRSI_arr, _adaSig09)
+array.push(_adaRSI_arr, _adaSig10)
+array.push(_adaRSI_arr, _adaSig11)
+array.push(_adaRSI_arr, _adaSig12)
+array.push(_adaRSI_arr, _adaSig13)
+array.push(_adaRSI_arr, _adaSig14)
+array.push(_adaRSI_arr, _adaSig15)
+array.push(_adaRSI_arr, _adaSig16)
+array.push(_adaRSI_arr, _adaSig17)
+array.push(_adaRSI_arr, _adaSig18)
+array.push(_adaRSI_arr, _adaSig19)
+array.push(_adaRSI_arr, _adaSig20)
+array.push(_adaRSI_arr, _adaSig21)
+array.push(_adaRSI_arr, _adaSig22)
+array.push(_adaRSI_arr, _adaSig23)
+array.push(_adaRSI_arr, _adaSig24)
+array.push(_adaRSI_arr, _adaSig25)
+array.push(_adaRSI_arr, _adaSig26)
+array.push(_adaRSI_arr, _adaSig27)
+array.push(_adaRSI_arr, _adaSig28)
+array.push(_adaRSI_arr, _adaSig29)
+array.push(_adaRSI_arr, _adaSig30)
+array.push(_adaRSI_arr, _adaSig31)
+array.push(_adaRSI_arr, _adaSig32)
+array.push(_adaRSI_arr, _adaSig33)
+array.push(_adaRSI_arr, _adaSig34)
+array.push(_adaRSI_arr, _adaSig35)
+array.push(_adaRSI_arr, _adaSig36)
+array.push(_adaRSI_arr, _adaSig37)
+array.push(_adaRSI_arr, _adaSig38)
+array.push(_adaRSI_arr, _adaSig39)
+array.push(_adaRSI_arr, _adaSig40)
+
+///////////
+// PLOTS //
+
+var tbl = table.new(string(i_s_Y +'_'+ i_s_X), 6, 41, border_color=color.new(#0f0000, 0))
+
+if barstate.islast
+
+    table.cell(tbl, 0, 0, string('Symbol'+' -- '+"Price"), text_halign = text.align_center,
+                                                                         bgcolor = _colTable, text_color = _colText, text_size = i_s_font)
+    table.cell(tbl, 1, 0, 'Smooth Tema',text_halign = text.align_center, bgcolor = _colTable, text_color = _colText, text_size = i_s_font)
+    table.cell(tbl, 2, 0, 'RSI',        text_halign = text.align_center, bgcolor = _colTable, text_color = _colText, text_size = i_s_font)
+    table.cell(tbl, 3, 0, 'Adap. RSI',  text_halign = text.align_center, bgcolor = _colTable, text_color = _colText, text_size = i_s_font)
+    table.cell(tbl, 4, 0, 'ADX',        text_halign = text.align_center, bgcolor = _colTable, text_color = _colText, text_size = i_s_font) 
+    //table.cell(tbl, 5, 0, 'RSI Hidden', text_halign = text.align_center, bgcolor = _colTable, text_color = _colText, text_size = i_s_font)
+    table.cell(tbl, 5, 0, 'BB %B',      text_halign = text.align_center, bgcolor = _colTable, text_color = _colText, text_size = i_s_font)
+    for i = 0 to 39
+        if array.get(u_arr, i)
+            _ema_col   = array.get(ematema_arr,i) == "Up" ?                  bullish_col : array.get(ematema_arr,i) 
+             == "Down"  ? bearish_col : array.get(ematema_arr,i) == "Long" ? bullish_col : array.get(ematema_arr,i) 
+                          == "Short" ? bearish_col : array.get(ematema_arr,i) == "Wait For Signal" ?  _colTable : na
+
+            //_div_col   = array.get(_div_arr, i)   == 'Regular Long Sig' ? bullish_col : array.get(_div_arr,i) 
+             //== "Regular Short Sig" ? bearish_col : array.get(_div_arr, i) == "Hidden Long Sig" ? color.new(#43ebed, 0) 
+             //: array.get(_div_arr, i) == "Hidden Short Sig" ? color.new(#c6642f, 0) : _colTable
+
+            _ada_col   = array.get(_adaRSI_arr, i) > array.get(_adaRSI_arr[1], i) ? bullish_col 
+             : array.get(_adaRSI_arr, i) < array.get(_adaRSI_arr[1], i) ? bearish_col  : _colTable 
+
+            adx_col    = array.get(adx_arr, i) > 40 ? bullish_col : array.get(adx_arr, i) < 40 ? bearish_col : _colTable
+            rsi_col    = array.get(rsi_arr, i) > _obLevel  ? bearish_col : array.get(rsi_arr, i)
+                                                                                   < _osLevel  ? bullish_col : _colTable
+            
+            symbol_text = string(array.get(s_arr, i)) +' -- '+ str.tostring(array.get(cl_arr, i))
+            symbol_col  = array.get(cl_arr, i) > array.get(cl_arr[1], i) ? bullish_col 
+                                      : array.get(cl_arr, i) < array.get(cl_arr[1],i) ? bearish_col : _colTable
+
+            table.cell(tbl, 0, i + 1, symbol_text, text_halign = text.align_left,
+             bgcolor = symbol_col, text_color = _colText, text_size = i_s_font)
+
+            table.cell(tbl, 1, i + 1, str.tostring(array.get(ematema_arr, i)),    text_halign = text.align_center,
+             bgcolor = _ema_col, text_color = _colText, text_size = i_s_font)
+            table.cell(tbl, 2, i + 1, str.tostring(array.get(rsi_arr, i), "#.##"),text_halign = text.align_center,
+             bgcolor = rsi_col,  text_color = _colText, text_size = i_s_font)
+            
+            //table.cell(tbl, 5, i + 1, str.tostring(array.get(_div_arr, i)),       text_halign = text.align_center,
+             //bgcolor = _div_col   , text_color = _colText, text_size = i_s_font)
+            table.cell(tbl, 3, i + 1, str.tostring(array.get(_adaRSI_arr, i)),    text_halign = text.align_center, 
+             bgcolor = _ada_col   ,  text_color = _colText, text_size = i_s_font)
+
+            table.cell(tbl, 4, i + 1, str.tostring(array.get(adx_arr, i)),        text_halign = text.align_center,
+             bgcolor = adx_col,  text_color = _colText, text_size = i_s_font)
+            table.cell(tbl, 5, i + 1, str.tostring(array.get(bbr_arr,  i)),       text_halign = text.align_center,
+             bgcolor = _colTable, text_color = _colText, text_size = i_s_font)
+
+
+
+
+
+   
