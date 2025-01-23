@@ -1,0 +1,207 @@
+//@version=5
+indicator("ICT IPDA Liquidity Matrix By AlgoCados", shorttitle="IPDA Liquidity Matrix", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ~~ Inputs {
+
+// ~~ CONFIG
+offset = input.int(15, "Offset", group="MAIN")
+labelStats = input.string("Verbose", title="Labels", options=["Compact", "Verbose"], group="MAIN", tooltip="• Compact → Level (HTF 60H)\n\n• Verbose → Type + Level (Buyside x HTF 60H)")
+
+// ~~ DAILY OPEN
+showDO       = input.bool(true, title="Daily Open", inline="DO", group="MAIN")
+dOpStyle     = input.string("Solid", title="", options=["Solid", "Dotted", "Dashed"], inline="DO", group="MAIN")
+dOpLineWidth = input.int(defval=1, title="", minval=1, maxval=4, step=1, inline="DO", group="MAIN")
+dOpColor     = input.color(color.new(#aa8ce1, 10), title="", inline="DO", group="MAIN")
+
+// ~~ HTF LEVELS
+showHTF        = input.bool(true, title="HTF Levels", inline="htfHL", group="MAIN")
+hlStyleHTF     = input.string("Solid", title="", options=["Solid", "Dotted", "Dashed"],inline="htfHL", group="MAIN")
+hlLineWidthHTF = input.int(defval=1, title="", minval=1, maxval=4, step=1, inline="htfHL", group="MAIN")
+hiColorHTF     = input.color(color.new(#2637f0, 10), title="", inline="htfHL", group="MAIN")
+loColorHTF     = input.color(color.new(#af1452, 10), title="", tooltip="Previous 20/40/60 Days Highs & Lows\n\n• Left → High Color\n\n• Right → Low Color", inline="htfHL", group="MAIN")
+
+// ~~ LTF LEVELS
+showLTF        = input.bool(true, title="LTF Levels ", inline="ltfHL", group="MAIN")
+hlStyleLTF     = input.string("Dotted", title="", options=["Solid", "Dotted", "Dashed"],inline="ltfHL", group="MAIN")
+hlLineWidthLTF = input.int(defval=1, title="", minval=1, maxval=4, step=1, inline="ltfHL", group="MAIN")
+hiColorLTF     = input.color(color.new(#2637f0, 10), title="", inline="ltfHL", group="MAIN")
+loColorLTF     = input.color(color.new(#af1452, 10), title="", tooltip="Previous 20/40/60 1H Bars Highs & Lows\n\n• Left → High Color\n\n• Right → Low Color", inline="ltfHL", group="MAIN")
+
+// ~~ TEXT UTILS 
+fontFamily = input.string("Sans Serif", title="Family", options=["Monospace", "Sans Serif"], inline="txt", group="TEXT UTILS")
+fontSize   = input.string("small", title="Size", options=["small", "normal", "large"], inline="txt", group="TEXT UTILS")
+textColor  = input.color(color.new(#434651, 0), title="", inline="txt", group="TEXT UTILS")
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+// ~~ Constants {
+
+// ~~ BAR INDEX
+barIndex	= bar_index
+offsetIndex	= bar_index + offset
+
+// ~~ LABEL STYLES
+lvlLabelStyle = label.style_label_left
+rHiLabelStyle = label.style_label_lower_right
+rLoLabelStyle = label.style_label_upper_right
+
+noColor = color.new(#ffffff, 100)
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+// ~~ Variables {
+
+// ~~ DAILY OPEN
+var line dOpen = na
+var label dOpenLabel = na
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+// ~~ Functions {
+
+// ~~ GET LINE STYLE
+method getLineStyle(string _style) =>
+	switch _style
+        "Solid" => line.style_solid
+        "Dotted" => line.style_dotted
+        "Dashed" => line.style_dashed
+
+// ~~ GET FONT SIZE
+method getFontSize(string _size) =>
+	switch _size
+        "small" => size.small
+        "normal" => size.normal
+        "large" => size.large
+	
+// ~~ GET FONT FAMILY
+method getFontFamily(string _family) =>
+	_family == "Monospace" ? font.family_monospace : na
+
+// ~~ PLOT LEVELS
+method plotLevels(bool _show, simple string _tf, int _lookback, color _bslColor, color _sslColor, string _hlStyle, int _hlLineWidth, string _type) =>
+    
+    var line _hi = na
+    var line _lo = na
+
+    var label _hiLabel = na
+    var label _loLabel = na
+    
+    var bool _updateHiX = na
+    var bool _updateLoX = na    
+    
+    LB = _lookback + (_lookback / 20)
+
+    _h = request.security(syminfo.tickerid, _tf, ta.highest(high, LB))
+    _l = request.security(syminfo.tickerid, _tf, ta.lowest(low, LB))
+
+	_buySideLabel = (labelStats == "Compact" ? _type : ("Buyside x " + _type)) + str.tostring(_lookback) + "H"
+	_sellSideLabel = (labelStats == "Compact" ? _type : ("Sellside x " + _type)) + str.tostring(_lookback) + "L"
+
+    if ta.change(time("D")) and _show and (timeframe.in_seconds(timeframe.period) <= timeframe.in_seconds(_tf))
+        line.delete(_hi)
+        line.delete(_lo)
+
+        label.delete(_hiLabel)
+        label.delete(_loLabel)
+
+        _updateHiX := true
+        _updateLoX := true
+
+        _hi := line.new(x1=barIndex, y1=_h, x2=offsetIndex, y2=_h, color=_bslColor, style=getLineStyle(_hlStyle), width=_hlLineWidth)
+        _lo := line.new(x1=barIndex, y1=_l, x2=offsetIndex, y2=_l, color=_sslColor, style=getLineStyle(_hlStyle), width=_hlLineWidth)
+
+        _hiLabel := label.new(x=offsetIndex, y=_h, text=_buySideLabel ,color=noColor, style=lvlLabelStyle, textcolor=textColor, size=getFontSize(fontSize), text_font_family=getFontFamily(fontFamily), tooltip=str.tostring(_h))
+        _loLabel := label.new(x=offsetIndex, y=_l, text=_sellSideLabel ,color=noColor, style=lvlLabelStyle, textcolor=textColor, size=getFontSize(fontSize), text_font_family=getFontFamily(fontFamily), tooltip=str.tostring(_l))
+        
+    if _updateHiX
+        line.set_x2(_hi, offsetIndex)
+        label.set_x(_hiLabel, offsetIndex)
+
+    if _updateLoX
+        line.set_x2(_lo, offsetIndex)
+        label.set_x(_loLabel, offsetIndex)
+
+    if _updateHiX and high > _h
+        line.set_x2(_hi, barIndex)
+
+        label.set_x(_hiLabel, barIndex)
+        label.set_style(_hiLabel, rHiLabelStyle)
+
+        _updateHiX := false
+
+    if _updateLoX and low < _l
+        line.set_x2(_lo, barIndex)
+
+        label.set_x(_loLabel, barIndex)
+        label.set_style(_loLabel, rLoLabelStyle)
+
+        _updateLoX := false
+        
+    [_h, _l, _hi, _lo, _hiLabel, _loLabel]
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+// ~~ Logic {
+
+// ~~ PLOT HTF LEVELS
+[H20, L20, Hi20, Lo20, HiLabel20, LoLabel20] = plotLevels(showHTF, "D", 20, hiColorHTF, loColorHTF, hlStyleHTF, hlLineWidthHTF, "HTF ") 
+[H40, L40, Hi40, Lo40, HiLabel40, LoLabel40] = plotLevels(showHTF, "D", 40, hiColorHTF, loColorHTF, hlStyleHTF, hlLineWidthHTF, "HTF ") 
+[H60, L60, Hi60, Lo60, HiLabel60, LoLabel60] = plotLevels(showHTF, "D", 60, hiColorHTF, loColorHTF, hlStyleHTF, hlLineWidthHTF, "HTF ")
+
+// ~~ PLOT LTF LEVELS
+[h20, l20, hi20, lo20, hiLabel20, loLabel20] = plotLevels(showLTF, "60", 20, hiColorLTF, loColorLTF, hlStyleLTF, hlLineWidthLTF, "LTF ") 
+[h40, l40, hi40, lo40, hiLabel40, loLabel40] = plotLevels(showLTF, "60", 40, hiColorLTF, loColorLTF, hlStyleLTF, hlLineWidthLTF, "LTF ") 
+[h60, l60, hi60, lo60, hiLabel60, loLabel60] = plotLevels(showLTF, "60", 60, hiColorLTF, loColorLTF, hlStyleLTF, hlLineWidthLTF, "LTF ")
+
+// ~~ PLOT DAILY OPEN
+if ta.change(time("D")) and showDO
+    line.delete(dOpen)
+    label.delete(dOpenLabel)
+
+    dOpen := line.new(x1=barIndex, y1=open, x2=offsetIndex, y2=open, color=dOpColor, style=getLineStyle(dOpStyle), width=dOpLineWidth)
+    dOpenLabel := label.new(x=offsetIndex, y=open, text=(labelStats == "Compact" ? "DO" : "Daily Open") ,color=noColor, style=lvlLabelStyle, textcolor=textColor, size=getFontSize(fontSize), text_font_family=getFontFamily(fontFamily), tooltip=str.tostring(open))
+
+    // ~~ HTF LEVELS OVERLAPS
+    if (H20 == H40) or (H20 == H60)
+        line.delete(Hi20)
+        label.delete(HiLabel20)
+    if (H40 == H60)
+        line.delete(Hi40)
+        label.delete(HiLabel40)
+
+    if (L20 == L40) or (L20 == L60)
+        line.delete(Lo20)
+        label.delete(LoLabel20)
+
+    if (L40 == L60)
+        line.delete(Lo40)
+        label.delete(LoLabel40)
+
+    // ~~ LTF LEVELS OVERLAPS
+    if (h20 == h40) or (h20 == h60) or (h20 == H20) or (h20 == H40) or (h20 == H60)
+        line.delete(hi20)
+        label.delete(hiLabel20)
+
+    if (h40 == h60) or (h40 == H20) or (h40 == H40) or (h40 == H60)
+        line.delete(hi40)
+        label.delete(hiLabel40)
+
+    if (h60 == H20) or (h60 == H40) or (h60 == H60)
+        line.delete(hi60)
+        label.delete(hiLabel60)
+
+    if (l20 == l40) or (l20 == l60) or (l20 == L20) or (l20 == L40) or (l20 == L60)
+        line.delete(lo20)
+        label.delete(loLabel20)
+
+    if (l40 == l60) or (l40 == L20) or (l40 == L40) or (l40 == L60)
+        line.delete(lo40)
+        label.delete(loLabel40)
+
+    if (l60 == L20) or (l60 == L40) or (l60 == L60)
+        line.delete(lo60)
+        label.delete(loLabel60)
+
+else
+    line.set_x2(dOpen, offsetIndex)
+    label.set_x(dOpenLabel, offsetIndex)
